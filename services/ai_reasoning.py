@@ -330,7 +330,7 @@ def generate_deterministic_reasoning(evidence: Dict[str, Any]) -> Dict[str, Any]
 
     return {
         "ai_used": False,
-        "reasoning_source": "deterministic_engine",
+        "reasoning_source": "DETERMINISTIC_FALLBACK",
         "model": "deterministic",
         "attack_hypothesis": threat_type.replace("_", " ").title(),
         "summary": f"Deterministic security analysis calculated risk score {risk_score}/100 ({severity}).",

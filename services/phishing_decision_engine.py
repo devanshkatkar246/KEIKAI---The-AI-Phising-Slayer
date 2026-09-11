@@ -205,6 +205,38 @@ def extract_evidence_provenance(bundle: Dict[str, Any]) -> Tuple[List[Dict[str, 
                 "timestamp": now_iso
             })
 
+    # Stage 4B: URL Intelligence & Redirect Inspection
+    url_data = bundle.get("url_intelligence") or bundle.get("url") or {}
+    if url_data:
+        stage_results["url_intelligence"] = {
+            "url_risk": url_data.get("url_risk", 0),
+            "final_url": url_data.get("final_url", ""),
+            "has_redirects": url_data.get("redirect_chain", {}).get("has_redirects", False),
+            "is_credential_page": url_data.get("credential_page", {}).get("credential_page", False)
+        }
+
+        red_signals = url_data.get("redirect_chain", {}).get("signals", [])
+        if "MULTI_HOP_REDIRECT" in red_signals or "SHORTENER_REDIRECT" in red_signals or "CROSS_DOMAIN_REDIRECT" in red_signals:
+            supporting.append({
+                "source": "url_intelligence",
+                "signal": "suspicious_redirect_chain",
+                "value": f"Multi-hop or cross-domain redirect chain ending at '{url_data.get('final_url')}'",
+                "severity": 25,
+                "confidence": 0.90,
+                "timestamp": now_iso
+            })
+
+        cred_signal = url_data.get("credential_page", {})
+        if cred_signal.get("credential_page") or cred_signal.get("password_input"):
+            supporting.append({
+                "source": "url_intelligence",
+                "signal": "credential_landing_page",
+                "value": f"Final landing page ({url_data.get('final_url')}) contains credential harvesting form and password input field",
+                "severity": 40,
+                "confidence": 0.95,
+                "timestamp": now_iso
+            })
+
     # Stage 5: Visual Phishing / Logo Recognition
     visual_data = bundle.get("visual_phishing") or bundle.get("visual") or {}
     if visual_data:
@@ -222,6 +254,38 @@ def extract_evidence_provenance(bundle: Dict[str, Any]) -> Tuple[List[Dict[str, 
                 "value": f"Confirmed visual logo and page layout clone matching protected brand '{target}'",
                 "severity": 45,
                 "confidence": float(visual_data.get("confidence") or 90) / 100.0,
+                "timestamp": now_iso
+            })
+
+    # Stage 5B: Phase 6 Page Similarity & Brand Clone Analysis
+    page_data = bundle.get("page_analysis") or bundle.get("page_similarity") or bundle.get("brand_clone") or {}
+    if page_data:
+        clone_v = page_data.get("clone_verdict") or {}
+        classif = clone_v.get("clone_classification") or page_data.get("clone_classification") or ""
+        t_brand = page_data.get("target_brand") or clone_v.get("target_brand") or "Protected Brand"
+
+        stage_results["page_analysis"] = {
+            "clone_classification": classif,
+            "target_brand": t_brand,
+            "is_clone": clone_v.get("is_clone", False)
+        }
+
+        if classif == "STRONG_BRAND_CLONE":
+            supporting.append({
+                "source": "page_analysis",
+                "signal": "strong_brand_clone_detected",
+                "value": f"Multi-signal landing page clone detected targeting brand '{t_brand}' across visual, asset, and form signals",
+                "severity": 45,
+                "confidence": 0.95,
+                "timestamp": now_iso
+            })
+        elif classif == "POSSIBLE_BRAND_CLONE":
+            supporting.append({
+                "source": "page_analysis",
+                "signal": "possible_brand_clone_detected",
+                "value": f"Possible landing page clone detected targeting brand '{t_brand}' on unrelated domain",
+                "severity": 30,
+                "confidence": 0.80,
                 "timestamp": now_iso
             })
 
@@ -419,6 +483,76 @@ def determine_attack_hypothesis(
     return "CREDENTIAL_HARVESTING" if risk_score >= 50 else "INCONCLUSIVE"
 
 
+def deduplicate_and_normalize_evidence(
+    supporting: List[Dict[str, Any]],
+    contradicting: List[Dict[str, Any]]
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Phase 1 Anti-Double Counting Engine:
+    Categorizes evidence signals into INDEPENDENT, CORROBORATING, and DUPLICATE.
+    Suppresses duplicate severity contributions when multiple detectors report the exact same underlying fact
+    (e.g., RDAP creation date vs WHOIS registration date, or multiple perceptual hashes for one visual screenshot).
+    """
+    seen_facts: Dict[str, Dict[str, Any]] = {}
+    deduped_supporting: List[Dict[str, Any]] = []
+    evidence_groups: List[Dict[str, Any]] = []
+
+    FACT_MAP = {
+        "newly_registered_domain": "DOMAIN_REGISTRATION_AGE",
+        "very_new_domain_registration": "DOMAIN_REGISTRATION_AGE",
+        "lookalike_domain_detected": "TYPOSQUAT_LOOKALIKE",
+        "lookalike_domain_permutation": "TYPOSQUAT_LOOKALIKE",
+        "visual_brand_impersonation": "VISUAL_BRAND_MATCH",
+        "strong_brand_clone": "VISUAL_BRAND_MATCH",
+        "visual_brand_clone": "VISUAL_BRAND_MATCH",
+        "openphish_active_feed_match": "GLOBAL_THREAT_FEED_MATCH",
+        "phishtank_verified_database_match": "GLOBAL_THREAT_FEED_MATCH",
+        "credential_phishing_keywords": "CREDENTIAL_HARVEST_TEXT",
+        "urgency_language": "SOCIAL_ENGINEERING_URGENCY",
+        "qr_code_credential_url": "QR_CREDENTIAL_LINK",
+        "attachment_credential_form": "ATTACHMENT_CREDENTIAL_FORM"
+    }
+
+    for idx, item in enumerate(supporting):
+        sig = item.get("signal") or item.get("type") or "unknown"
+        fact_key = FACT_MAP.get(sig, f"INDEPENDENT_{sig}")
+
+        if fact_key in seen_facts:
+            primary = seen_facts[fact_key]
+            cat = "DUPLICATE" if primary.get("source") == item.get("source") else "CORROBORATING"
+
+            item_copy = dict(item)
+            item_copy["evidence_category"] = cat
+            item_copy["underlying_fact"] = fact_key
+            item_copy["effective_severity"] = 0 if cat == "DUPLICATE" else max(0, item.get("severity", 0) // 2)
+            deduped_supporting.append(item_copy)
+
+            for grp in evidence_groups:
+                if grp["underlying_fact"] == fact_key:
+                    grp["signals"].append(item_copy)
+                    if cat == "CORROBORATING":
+                        grp["effective_severity"] = min(100, grp["effective_severity"] + item_copy["effective_severity"])
+                    break
+        else:
+            item_copy = dict(item)
+            item_copy["evidence_category"] = "INDEPENDENT"
+            item_copy["underlying_fact"] = fact_key
+            item_copy["effective_severity"] = item.get("severity", 0)
+            seen_facts[fact_key] = item_copy
+            deduped_supporting.append(item_copy)
+
+            evidence_groups.append({
+                "group_id": f"grp-{fact_key.lower()}",
+                "category": "INDEPENDENT",
+                "primary_signal": sig,
+                "underlying_fact": fact_key,
+                "signals": [item_copy],
+                "effective_severity": item.get("severity", 0)
+            })
+
+    return deduped_supporting, evidence_groups
+
+
 def calculate_independent_metrics(
     supporting: List[Dict[str, Any]],
     contradicting: List[Dict[str, Any]],
@@ -427,13 +561,15 @@ def calculate_independent_metrics(
     """
     Calculates independent Risk Score, Confidence, and Evidence Quality.
     CRITICAL RULE: risk_score != confidence != evidence_quality
+    Uses effective_severity from anti-double counting engine.
     """
     # 1. Calculate Risk Score (0 - 100)
-    sum_severities = sum(item.get("severity", 0) for item in supporting)
+    sum_severities = sum(item.get("effective_severity", item.get("severity", 0)) for item in supporting)
 
     stage_max_risk = max(
         stage_results.get("email", {}).get("risk_score", 0),
         stage_results.get("payload", {}).get("risk_score", 0),
+        stage_results.get("url_intelligence", {}).get("url_risk", 0),
         stage_results.get("visual", {}).get("confidence", 0) if stage_results.get("visual", {}).get("verdict") == "Phishing" else 0,
         0
     )
@@ -471,7 +607,7 @@ def calculate_independent_metrics(
     base_confidence = 60.0
 
     # Source Agreement Bonus
-    unique_sources = {item["source"] for item in supporting}
+    unique_sources = {item.get("source", "unknown") for item in supporting}
     if len(unique_sources) >= 3:
         base_confidence += 25
     elif len(unique_sources) >= 2:
@@ -504,17 +640,26 @@ def calculate_independent_metrics(
     return risk_score, confidence, evidence_quality
 
 
-def evaluate_phishing_decision(evidence_bundle: Dict[str, Any]) -> Dict[str, Any]:
+def evaluate_phishing_decision(
+    evidence_bundle: Dict[str, Any],
+    investigation_id: Optional[str] = None,
+    organisation_id: Optional[str] = "org_acme_01"
+) -> Dict[str, Any]:
     """
-    Main entry point for Unified Organisational Phishing Decision Engine.
+    Main entry point for Unified Organisational Phishing Decision Engine (Phase 9/Phase 1 Unified Foundation).
     
-    1. Extracts structured supporting/contradicting evidence with provenance.
-    2. Calculates independent Risk Score, Confidence, and Evidence Quality.
-    3. Determines primary attack hypothesis via deterministic correlation.
-    4. Formulates final organizational verdict & recommended action.
-    5. Calls AI Reasoning service for 1-pass explainable correlation.
+    1. Extracts structured supporting/contradicting evidence items with provenance.
+    2. Applies anti-double counting engine to group evidence into INDEPENDENT, CORROBORATING, DUPLICATE.
+    3. Calculates independent Risk Score, Confidence, and Evidence Quality metrics.
+    4. Assigns primary & secondary attack hypotheses via evidence correlation rules.
+    5. Formulates final organizational verdict & evaluates policy enforcement.
+    6. Calls AI Reasoning service with strict 1-pass evidence fingerprint caching.
     """
-    supporting, contradicting, stage_results = extract_evidence_provenance(evidence_bundle)
+    inv_id = investigation_id or evidence_bundle.get("investigation_id") or "INV-LIVE-01"
+    org_id = organisation_id or evidence_bundle.get("organisation_id") or "org_acme_01"
+
+    supporting_raw, contradicting, stage_results = extract_evidence_provenance(evidence_bundle)
+    supporting, evidence_groups = deduplicate_and_normalize_evidence(supporting_raw, contradicting)
     risk_score, confidence, evidence_quality = calculate_independent_metrics(supporting, contradicting, stage_results)
 
     # Verdict Classification
@@ -522,18 +667,30 @@ def evaluate_phishing_decision(evidence_bundle: Dict[str, Any]) -> Dict[str, Any
         verdict = "MALICIOUS"
     elif any(item["signal"] == "analyst_false_positive_override" for item in contradicting):
         verdict = "BENIGN"
-    elif any(item["signal"] == "official_brand_domain" for item in contradicting) and not any(item["severity"] >= 35 for item in supporting):
+    elif any(item["signal"] == "official_brand_domain" for item in contradicting) and not any(item.get("severity", 0) >= 35 for item in supporting):
         verdict = "BENIGN"
     elif risk_score >= 70:
         verdict = "MALICIOUS"
-    elif risk_score >= 35 or any(item["severity"] >= 35 for item in supporting):
+    elif risk_score >= 35 or any(item.get("severity", 0) >= 35 for item in supporting):
         verdict = "SUSPICIOUS" if risk_score < 70 else "MALICIOUS"
-    elif evidence_quality <= 55 and risk_score < 35 and not any(item["signal"] in ("official_brand_domain", "benign_internal_sender") for item in contradicting):
+    elif evidence_quality <= 45 and risk_score < 35 and not any(item["signal"] in ("official_brand_domain", "benign_internal_sender") for item in contradicting):
         verdict = "INCONCLUSIVE"
     else:
         verdict = "BENIGN"
 
-    attack_hypothesis = determine_attack_hypothesis(evidence_bundle, supporting, contradicting, risk_score)
+    primary_hypothesis = determine_attack_hypothesis(evidence_bundle, supporting, contradicting, risk_score)
+    
+    # Extract secondary hypotheses
+    secondary_hypotheses: List[str] = []
+    signals_set = {item["signal"] for item in supporting}
+    if "qr_code_credential_url" in signals_set and primary_hypothesis != "QR_PHISHING":
+        secondary_hypotheses.append("QR_PHISHING")
+    if ("attachment_credential_form" in signals_set or "malicious_attachment_format" in signals_set) and primary_hypothesis != "MALICIOUS_ATTACHMENT":
+        secondary_hypotheses.append("MALICIOUS_ATTACHMENT")
+    if "visual_brand_impersonation" in signals_set and primary_hypothesis != "VISUAL_BRAND_CLONE":
+        secondary_hypotheses.append("VISUAL_BRAND_CLONE")
+    if "very_new_domain_registration" in signals_set:
+        secondary_hypotheses.append("NEW_DOMAIN")
 
     # Primary Reasons Synthesis
     primary_reasons = [item["value"] for item in supporting[:4]]
@@ -543,46 +700,93 @@ def evaluate_phishing_decision(evidence_bundle: Dict[str, Any]) -> Dict[str, Any
         else:
             primary_reasons.append("Sparse evidence gathered; no high-risk threat signals detected.")
 
-    # Recommended Action
-    if verdict == "MALICIOUS":
-        recommended_action = "BLOCK_AND_QUARANTINE"
-    elif verdict == "SUSPICIOUS":
-        recommended_action = "ISOLATE_AND_INVESTIGATE" if risk_score >= 60 else "MONITOR_SENDER"
-    elif verdict == "INCONCLUSIVE":
-        recommended_action = "MONITOR_SENDER"
-    else:
-        recommended_action = "ALLOW"
+    # Recommended Policy Enforcement Action
+    try:
+        from services.policy_engine import evaluate_message_policy
+        policy_eval = evaluate_message_policy(
+            message={"message_id": inv_id, "organisation_id": org_id},
+            decision_verdict={"risk_score": risk_score, "confidence": confidence, "evidence_quality": evidence_quality, "verdict": verdict}
+        )
+        recommended_action = policy_eval.get("action") or policy_eval.get("decision") or "ANALYST_REVIEW"
+    except Exception as p_err:
+        logger.debug(f"Policy engine evaluation fallback: {p_err}")
+        if verdict == "MALICIOUS":
+            recommended_action = "BLOCK" if confidence >= 80 else "QUARANTINE"
+        elif verdict == "SUSPICIOUS":
+            recommended_action = "QUARANTINE" if risk_score >= 60 else "ANALYST_REVIEW"
+        elif verdict == "INCONCLUSIVE":
+            recommended_action = "ANALYST_REVIEW"
+        else:
+            recommended_action = "ALLOW"
+
+    # AI Reasoning Call Payload (Hardened against Prompt Injection)
+    untrusted_subject = evidence_bundle.get("email_analysis", {}).get("email", {}).get("subject") or evidence_bundle.get("subject", "")
+    untrusted_body = (evidence_bundle.get("email_analysis", {}).get("email", {}).get("body") or evidence_bundle.get("body", ""))[:500]
 
     ai_input_payload = {
-        "subject": evidence_bundle.get("email_analysis", {}).get("email", {}).get("subject") or evidence_bundle.get("subject", ""),
+        "investigation_id": inv_id,
+        "organisation_id": org_id,
+        "subject": f"<untrusted_evidence_content>{untrusted_subject}</untrusted_evidence_content>",
         "sender": evidence_bundle.get("email_analysis", {}).get("email", {}).get("sender") or evidence_bundle.get("sender", ""),
+        "body_snippet": f"<untrusted_evidence_content>{untrusted_body}</untrusted_evidence_content>",
         "risk_score": risk_score,
+        "confidence": confidence,
+        "evidence_quality": evidence_quality,
         "severity": "CRITICAL" if risk_score >= 85 else "HIGH" if risk_score >= 65 else "MEDIUM" if risk_score >= 40 else "LOW",
-        "threat_type": attack_hypothesis.lower(),
+        "threat_type": primary_hypothesis.lower(),
         "signals": {item["signal"]: True for item in supporting},
         "extracted_domains": [stage_results.get("domain", {}).get("domain")] if stage_results.get("domain", {}).get("domain") else [],
-        "sender_behavior_hypothesis": attack_hypothesis
+        "sender_behavior_hypothesis": primary_hypothesis
     }
 
     try:
         from services.ai_reasoning import analyze_evidence
         ai_eval = analyze_evidence(ai_input_payload)
     except Exception as ex:
-        logger.warning(f"AI reasoning execution error caught: {ex}")
+        logger.warning(f"AI reasoning execution fallback triggered: {ex}")
         ai_eval = {
             "ai_used": False,
-            "reasoning_source": "deterministic_engine",
+            "reasoning_source": "DETERMINISTIC_FALLBACK",
             "model": "deterministic",
-            "summary": "Deterministic security decision applied.",
+            "summary": "Deterministic security decision applied (AI provider unavailable).",
             "key_evidence": primary_reasons
         }
 
+    # Attach Attack Chain graph if available
+    attack_chain_data = evidence_bundle.get("attack_chain") or {}
+    if not attack_chain_data:
+        try:
+            from services.chain_tracer import trace_attack_chain
+            attack_chain_data = trace_attack_chain(
+                investigation_id=inv_id,
+                target_url=evidence_bundle.get("url_intelligence", {}).get("final_url") or evidence_bundle.get("url"),
+                email_bundle=evidence_bundle.get("email_analysis") or evidence_bundle,
+                page_analysis=evidence_bundle.get("page_analysis")
+            )
+        except Exception as ac_err:
+            logger.debug(f"Attack chain trace fallback in decision engine: {ac_err}")
+            attack_chain_data = {"nodes": [], "edges": [], "hypotheses": [], "evidence_items": []}
+
     return {
+        "investigation_id": inv_id,
+        "organisation_id": org_id,
         "verdict": verdict,
         "risk_score": risk_score,
         "confidence": confidence,
         "evidence_quality": evidence_quality,
-        "attack_hypothesis": attack_hypothesis,
+        "primary_hypothesis": primary_hypothesis,
+        "attack_hypothesis": primary_hypothesis,
+        "secondary_hypotheses": secondary_hypotheses,
+        "hypotheses": attack_chain_data.get("hypotheses", []),
+        "evidence_groups": evidence_groups,
+        "evidence_items": attack_chain_data.get("evidence_items") or supporting,
+        "nodes": attack_chain_data.get("nodes", []),
+        "edges": attack_chain_data.get("edges", []),
+        "metrics": {
+            "risk_score": risk_score,
+            "confidence": confidence,
+            "evidence_quality": evidence_quality
+        },
         "primary_reasons": primary_reasons,
         "supporting_evidence": supporting,
         "contradicting_evidence": contradicting,
@@ -590,7 +794,7 @@ def evaluate_phishing_decision(evidence_bundle: Dict[str, Any]) -> Dict[str, Any
         "stage_results": stage_results,
         "ai_reasoning": {
             "ai_used": ai_eval.get("ai_used", False),
-            "reasoning_source": ai_eval.get("reasoning_source", "deterministic_engine"),
+            "reasoning_source": ai_eval.get("reasoning_source", "DETERMINISTIC_FALLBACK"),
             "model": ai_eval.get("model", "deterministic"),
             "summary": ai_eval.get("summary", ""),
             "key_evidence": ai_eval.get("key_evidence", [])
@@ -598,3 +802,81 @@ def evaluate_phishing_decision(evidence_bundle: Dict[str, Any]) -> Dict[str, Any
         "decision_version": DECISION_VERSION,
         "evaluated_at": datetime.now(timezone.utc).isoformat()
     }
+
+
+def analyze_investigation(
+    investigation_id: str,
+    organisation_id: str = "org_acme_01",
+    target_url: Optional[str] = None,
+    email_bundle: Optional[Dict[str, Any]] = None,
+    page_analysis_override: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Master Orchestration Entry Point for Phase 9.
+    Sequentially executes multi-stage analysis pipeline:
+    EMAIL -> SENDER -> PAYLOAD -> URL/DOMAIN -> ENTITY -> CHAIN -> UNIFIED VERDICT.
+    Prevents redundant external calls by reusing existing stage outputs.
+    """
+    logger.info(f"[Decision Engine Orchestration] Analyzing investigation '{investigation_id}' for org '{organisation_id}'...")
+
+    # Stage 1: Email Threat Analysis
+    if not email_bundle:
+        from services.email_analysis import analyze_email_threat
+        sample_email = {
+            "sender": "finance-alert@amaz0n-security-login.xyz",
+            "subject": "Urgent Account Verification Required",
+            "body": "Your corporate account requires immediate password verification at https://amaz0n-security-login.xyz/auth/login.html"
+        }
+        email_analysis = analyze_email_threat(sample_email)
+    else:
+        email_analysis = email_bundle
+
+    # Stage 2: Sender Behavior Telemetry
+    from services.sender_behavior import get_sender_behavior_telemetry
+    sender_addr = email_analysis.get("sender") or email_analysis.get("email", {}).get("sender") or "unknown@example.com"
+    sender_behavior = get_sender_behavior_telemetry(sender_addr, organisation_id=organisation_id)
+
+    # Stage 3: URL & Domain Intelligence
+    extracted_urls = email_analysis.get("extracted_urls") or email_analysis.get("urls") or []
+    if target_url:
+        extracted_urls.insert(0, target_url)
+    active_url = extracted_urls[0] if extracted_urls else "https://amaz0n-security-login.xyz/auth/login.html"
+
+    from services.url_intelligence import analyze_url_intelligence
+    url_intel = analyze_url_intelligence(active_url)
+
+    # Stage 4: Page Analysis & Brand Clone Detection (Phase 6)
+    if not page_analysis_override:
+        from services.page_analyzer import analyze_landing_page
+        page_analysis = analyze_landing_page(url_intel.get("final_url") or active_url)
+    else:
+        page_analysis = page_analysis_override
+
+    # Stage 5: Entity Intelligence & Attack Chain (Phase 8)
+    final_dom = url_intel.get("domain") or "amaz0n-security-login.xyz"
+    from services.entity_intelligence import get_domain_entity_profile
+    from services.chain_tracer import trace_attack_chain
+
+    entity_profile = get_domain_entity_profile(final_dom, investigation_id=investigation_id)
+    attack_chain = trace_attack_chain(
+        investigation_id=investigation_id,
+        target_url=active_url,
+        email_bundle=email_analysis,
+        page_analysis=page_analysis,
+        entity_profiles=[entity_profile]
+    )
+
+    # Stage 6: Unified Decision Fusion
+    evidence_bundle = {
+        "investigation_id": investigation_id,
+        "organisation_id": organisation_id,
+        "email_analysis": email_analysis,
+        "sender_behavior": sender_behavior,
+        "url_intelligence": url_intel,
+        "page_analysis": page_analysis,
+        "entity_intelligence": entity_profile,
+        "attack_chain": attack_chain
+    }
+
+    return evaluate_phishing_decision(evidence_bundle, investigation_id=investigation_id, organisation_id=organisation_id)
+

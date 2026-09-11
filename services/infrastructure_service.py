@@ -165,13 +165,16 @@ def generate_plain_language_summary(
 def find_linked_infrastructure(
     evidence_domains: List[Dict[str, Any]],
     evidence_logos: List[Dict[str, Any]],
-    evidence_visual_phishing: List[Dict[str, Any]]
+    evidence_visual_phishing: List[Dict[str, Any]],
+    investigation_id: Optional[str] = None,
+    organisation_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Given active case evidence items, queries SQLite for other scanned assets sharing technical fingerprints.
+    Supports investigation_id and organisation_id scoping to prevent cross-investigation leakage.
     Filters out high-cardinality shared hosting IPs.
     """
-    all_stored = fetch_all_assets()
+    all_stored = fetch_all_assets(investigation_id=investigation_id, organisation_id=organisation_id)
     excluded_ips = get_excluded_high_cardinality_ips(all_stored)
 
     linked_map: Dict[str, Dict[str, Any]] = {}
@@ -240,12 +243,18 @@ def find_linked_infrastructure(
     }
 
 
-def get_offender_clusters(brand: Optional[str] = None, case_id: Optional[str] = None) -> Dict[str, Any]:
+def get_offender_clusters(
+    brand: Optional[str] = None,
+    case_id: Optional[str] = None,
+    investigation_id: Optional[str] = None,
+    organisation_id: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Groups assets in SQLite database into offender infrastructure clusters.
-    Supports optional brand or case filtering to isolate active case clusters.
+    Supports brand, case_id, investigation_id, and organisation_id filtering to isolate active case clusters.
     """
-    assets = fetch_all_assets()
+    target_inv = investigation_id or case_id
+    assets = fetch_all_assets(investigation_id=target_inv, organisation_id=organisation_id)
     if not assets:
         return {"total_clusters": 0, "clusters": []}
 

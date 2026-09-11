@@ -536,9 +536,17 @@ def analyze_email_threat(
     analysis_id = f"EMA-{uuid.uuid4().hex[:8].upper()}"
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    sub = (subject or "").strip()
-    snd = (sender or "").strip()
-    bdy = (body or "").strip()
+    if isinstance(subject, dict):
+        d = subject
+        subject = d.get("subject")
+        sender = sender or d.get("sender")
+        body = body or d.get("body")
+        received_at = received_at or d.get("received_at")
+        headers = headers or d.get("headers")
+
+    sub = (subject or "").strip() if isinstance(subject, str) else ""
+    snd = (sender or "").strip() if isinstance(sender, str) else ""
+    bdy = (body or "").strip() if isinstance(body, str) else ""
 
     # Step 1: Ingestion & IOC Extraction
     iocs = extract_iocs(subject=sub, sender=snd, body=bdy)

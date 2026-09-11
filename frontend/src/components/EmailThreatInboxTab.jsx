@@ -224,16 +224,24 @@ const EmailThreatInboxTab = ({
     }
   };
 
-  // Controlled analysis trigger - runs ONLY when a new sample is selected, not on re-renders or tab switches
-  useEffect(() => {
-    if (mode === 'sample' && selectedSample) {
-      const sampleKey = `sample:${selectedSample.id}`;
-      if (lastAnalyzedKeyRef.current !== sampleKey) {
-        lastAnalyzedKeyRef.current = sampleKey;
-        handleAnalyzeEmail(selectedSample.subject, selectedSample.sender, selectedSample.body);
-      }
+  // Sync analysisResult with central investigationResult if present
+  const activeResult = investigationResult || analysisResult;
+
+  const handleExplicitAnalyzeClick = async () => {
+    const sub = mode === 'sample' ? selectedSample.subject : customSubject;
+    const snd = mode === 'sample' ? selectedSample.sender : customSender;
+    const bdy = mode === 'sample' ? selectedSample.body : customBody;
+
+    if (handleRunInvestigation) {
+      const invRes = await handleRunInvestigation({
+        emailData: { subject: sub, sender: snd, body: bdy },
+        reason: 'USER_EXPLICIT_ANALYZE'
+      });
+      if (invRes) setAnalysisResult(invRes);
+    } else {
+      handleAnalyzeEmail(sub, snd, bdy);
     }
-  }, [selectedSample?.id, mode]);
+  };
 
   const handleCustomSubmit = (e) => {
     e.preventDefault();
@@ -459,6 +467,26 @@ const EmailThreatInboxTab = ({
                   </label>
                   <div className="p-4 bg-surface rounded-lg border border-outline-variant font-mono text-xs text-on-background whitespace-pre-wrap leading-relaxed max-h-[160px] overflow-y-auto">
                     {selectedSample.body}
+                  </div>
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={handleExplicitAnalyzeClick}
+                      disabled={analyzing || isAnalyzing}
+                      className="btn-primary py-2 px-6 rounded-lg text-xs font-bold inline-flex items-center gap-2 shadow-xs cursor-pointer"
+                    >
+                      {analyzing || isAnalyzing ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          <span>Analyzing Security Threat...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={14} />
+                          <span>Analyze Threat &amp; Sender Telemetry</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
               </>

@@ -16,6 +16,7 @@ import WorkflowAutomationTab from './components/WorkflowAutomationTab';
 import DemoControllerBar from './components/DemoControllerBar';
 import DemoScenarioModal from './components/DemoScenarioModal';
 import { apiFetch } from './api';
+import { analyzeInvestigation, normalizeInvestigationResult } from './services/investigationService';
 import { ShieldAlert, Image as ImageIcon, FileCheck, Eye, Activity, Shield, Network, ShoppingBag, Share2, WifiOff, Plus } from 'lucide-react';
 
 const API_BASE_URL = 'http://localhost:8000';
@@ -103,6 +104,15 @@ function Dashboard() {
     } catch { return null; }
   });
 
+  const [investigationResult, setInvestigationResult] = useState(() => {
+    try {
+      const saved = localStorage.getItem('keikai_investigation_result');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
   useEffect(() => {
     if (investigationContext) {
       try {
@@ -110,6 +120,44 @@ function Dashboard() {
       } catch {}
     }
   }, [investigationContext]);
+
+  useEffect(() => {
+    if (investigationResult) {
+      try {
+        localStorage.setItem('keikai_investigation_result', JSON.stringify(investigationResult));
+      } catch {}
+    }
+  }, [investigationResult]);
+
+  const handleRunInvestigation = async (params = {}) => {
+    const invId = params.investigationId || investigationState.investigationId || `INV-${Date.now()}`;
+    const emailData = params.emailData || null;
+    const targetUrl = params.targetUrl || investigationContext?.url || '';
+
+    setIsAnalyzing(true);
+    try {
+      const result = await analyzeInvestigation({
+        investigationId: invId,
+        emailData,
+        targetUrl,
+        reason: params.reason || 'USER_ANALYZE_CLICK',
+        forceReanalyze: params.forceReanalyze || false
+      });
+
+      setInvestigationResult(result);
+      if (addToast) {
+        addToast('Analysis Complete', `Unified security verdict: ${result.verdict} (Risk: ${result.riskScore}/100)`, 'success');
+      }
+      return result;
+    } catch (err) {
+      console.error('[KEIKAI] Investigation analysis failed:', err);
+      if (addToast) {
+        addToast('Analysis Error', err.message || 'Failed to complete investigation analysis', 'error');
+      }
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   const [notes, setNotes] = useState(() => {
     return localStorage.getItem('bp_notes') || 'Flagged typosquatting domain lookalikes, logo misuse, counterfeit marketplace listings, and social media impersonation for executive review.';
@@ -491,14 +539,64 @@ function Dashboard() {
   const handleStartDemo = () => {
     // Initialize Amazon Demo Scenario
     setBrandName('Amazon');
+    const demoInvId = 'CASE-AMAZON-DEMO-092';
     setInvestigationState({
       isInitialized: true,
-      investigationId: 'CASE-AMAZON-DEMO-092',
+      investigationId: demoInvId,
       brandName: 'Amazon',
       officialDomain: 'amazon.com',
       source: 'Domain Monitoring',
       timestamp: new Date().toISOString()
     });
+
+    const demoResult = normalizeInvestigationResult({
+      investigation_id: demoInvId,
+      organisation_id: 'org_acme_01',
+      verdict: 'PHISHING',
+      risk_score: 94,
+      confidence: 91,
+      evidence_quality: 96,
+      primary_hypothesis: 'CREDENTIAL_HARVESTING',
+      recommended_action: 'BLOCK',
+      primary_reasons: [
+        'Sender behavior anomaly: finance sender transmitting off-hours to external recipient',
+        'Registered typosquat lookalike domain amazon-security-login.example (6 days old)',
+        'Extracted HTTP redirect chain: 2 hops leading to non-official origin',
+        'Dynamic JavaScript execution rendered hidden password harvesting form',
+        'Phishpedia model matched 94% visual brand similarity to Amazon'
+      ],
+      supporting_evidence: [
+        { source: 'sender_behavior', signal: 'possible_account_compromise', value: 'Internal account anomaly: off-hours transmission to external recipient', severity: 40, confidence: 0.85 },
+        { source: 'email_content', signal: 'credential_request', value: 'Urgent authentication or credential harvesting keywords in body', severity: 30, confidence: 0.85 },
+        { source: 'domain_intelligence', signal: 'lookalike_domain_permutation', value: 'Domain amazon-security-login.example registered 6 days ago via NameCheap', severity: 40, confidence: 0.95 },
+        { source: 'page_analysis', signal: 'dynamic_password_form', value: 'Password input field appeared dynamically after JS execution', severity: 45, confidence: 0.95 },
+        { source: 'visual_analysis', signal: 'brand_clone_detection', value: '94% visual brand similarity to Amazon official login portal', severity: 45, confidence: 0.95 }
+      ],
+      contradicting_evidence: [
+        { source: 'openphish', signal: 'no_openphish_match', value: 'No match in OpenPhish community database', severity: 0, confidence: 0.7 }
+      ],
+      ai_reasoning: {
+        ai_used: true,
+        reasoning_source: 'openrouter',
+        model: 'openrouter/free',
+        summary: 'High-risk credential harvesting campaign targeting Amazon credentials. Impersonates corporate security portal via a newly-registered lookalike domain.',
+        key_evidence: [
+          'Off-hours transmission from finance sender with credential link',
+          'Domain amazon-security-login.example registered 6 days ago',
+          'Dynamic JavaScript execution rendered credential input fields',
+          '94% visual brand clone match to Amazon'
+        ]
+      },
+      stage_results: {
+        email: { subject: 'URGENT: Corporate Vendor Account Login Verification Required', sender: 'finance@acme.example', threat_type: 'phishing', risk_score: 92 },
+        sender_behavior: { hypothesis: 'POSSIBLE_ACCOUNT_COMPROMISE', anomaly_score: 92, profile_available: true },
+        payload: { filename: 'login_verification.pdf', sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', is_html_form: true, qr_decoded_url: 'https://amazon-security-login.example/auth/login.html' },
+        domain: { domain: 'amazon-security-login.example', relationship: 'LOOKALIKE', is_lookalike: true, rdap_age_days: 6, registrar: 'NameCheap Inc.', threat_feeds: { openphish: false, phishtank: false, dnstwist: true } },
+        page_analysis: { title: 'Amazon Security Verification Portal', form_action: 'https://amazon-security-login.example/submit.php', matched_brand: 'Amazon', visual_similarity_percentage: 94.2, clone_classification: 'STRONG_BRAND_CLONE' }
+      }
+    });
+
+    setInvestigationResult(demoResult);
 
     // Seed deterministic evidence items for Amazon
     const demoDomains = [{
@@ -778,6 +876,9 @@ function Dashboard() {
               setBrandName={setBrandName}
               investigationContext={investigationContext}
               setInvestigationContext={setInvestigationContext}
+              investigationResult={investigationResult}
+              handleRunInvestigation={handleRunInvestigation}
+              isAnalyzing={isAnalyzing}
             />
           )}
 
@@ -800,6 +901,8 @@ function Dashboard() {
               onNavigateTab={setActiveTab}
               investigationContext={investigationContext}
               setInvestigationContext={setInvestigationContext}
+              investigationResult={investigationResult}
+              handleRunInvestigation={handleRunInvestigation}
             />
           )}
 
@@ -829,6 +932,8 @@ function Dashboard() {
               investigationContext={investigationContext}
               setInvestigationContext={setInvestigationContext}
               onNavigateTab={setActiveTab}
+              investigationResult={investigationResult}
+              handleRunInvestigation={handleRunInvestigation}
             />
           )}
 
@@ -860,6 +965,7 @@ function Dashboard() {
               brandName={brandName}
               handleAddClusterToCase={handleAddClusterToCase}
               toggleSelectDomain={toggleSelectDomain}
+              investigationResult={investigationResult}
             />
           )}
 
@@ -884,6 +990,8 @@ function Dashboard() {
               handleClearCase={handleClearCase}
               investigationContext={investigationContext}
               onNavigateTab={setActiveTab}
+              investigationResult={investigationResult}
+              handleRunInvestigation={handleRunInvestigation}
             />
           )}
 

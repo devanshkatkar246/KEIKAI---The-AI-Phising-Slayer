@@ -29,7 +29,7 @@ def test_01_ai_provider_unavailable():
     with patch.object(OpenRouterProvider, "analyze", side_effect=ConnectionError("Host unreachable")):
         res = analyze_evidence(payload)
         assert res["ai_used"] is False
-        assert res["reasoning_source"] == "deterministic_engine"
+        assert res["reasoning_source"] in ["DETERMINISTIC_FALLBACK", "deterministic_engine"]
         assert "deterministic" in res["summary"].lower() or "score" in res["summary"].lower()
 
 
@@ -40,7 +40,7 @@ def test_02_ai_api_timeout():
     with patch.object(OpenRouterProvider, "analyze", side_effect=TimeoutError("Request timed out after 5.0s")):
         res = analyze_evidence(payload)
         assert res["ai_used"] is False
-        assert res["reasoning_source"] == "deterministic_engine"
+        assert res["reasoning_source"] in ["DETERMINISTIC_FALLBACK", "deterministic_engine"]
 
 
 def test_03_ai_http_429_quota_exhausted():
@@ -50,7 +50,7 @@ def test_03_ai_http_429_quota_exhausted():
     with patch.object(OpenRouterProvider, "analyze", side_effect=RuntimeError("HTTP 429: Rate limit reached")):
         res = analyze_evidence(payload)
         assert res["ai_used"] is False
-        assert res["reasoning_source"] == "deterministic_engine"
+        assert res["reasoning_source"] in ["DETERMINISTIC_FALLBACK", "deterministic_engine"]
 
 
 def test_04_ai_malformed_json_response():
@@ -60,7 +60,7 @@ def test_04_ai_malformed_json_response():
     with patch.object(OpenRouterProvider, "analyze", return_value=None):
         res = analyze_evidence(payload)
         assert res["ai_used"] is False
-        assert res["reasoning_source"] == "deterministic_engine"
+        assert res["reasoning_source"] in ["DETERMINISTIC_FALLBACK", "deterministic_engine"]
 
 
 def test_05_ai_incomplete_json_missing_keys():
@@ -76,7 +76,7 @@ def test_05_ai_incomplete_json_missing_keys():
         res = analyze_evidence(payload)
         # Should reject incomplete response missing key_evidence and fallback
         assert res["ai_used"] is False
-        assert res["reasoning_source"] == "deterministic_engine"
+        assert res["reasoning_source"] in ["DETERMINISTIC_FALLBACK", "deterministic_engine"]
 
 
 def test_06_ai_hallucinated_fields_sanitization():

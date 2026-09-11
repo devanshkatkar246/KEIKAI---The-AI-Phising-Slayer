@@ -32,7 +32,9 @@ const DomainWatchTab = ({
   setDomainScanState,
   investigationContext,
   setInvestigationContext,
-  onNavigateTab
+  onNavigateTab,
+  investigationResult,
+  handleRunInvestigation
 }) => {
   const {
     domainInput = '',
@@ -49,15 +51,23 @@ const DomainWatchTab = ({
     pageSize = 25
   } = domainScanState || {};
 
-  // Auto-fill domain from investigationContext if empty
+  // Extract active investigation domain details
+  const activeDomain = investigationResult?.domainEvidence?.domain || investigationContext?.domain || '';
+  const activeSender = investigationResult?.emailEvidence?.sender || investigationContext?.sender || '';
+  const activeUrl = investigationResult?.urlEvidence?.finalUrl || investigationContext?.url || (activeDomain ? `https://${activeDomain}/login` : '');
+  const activeRisk = investigationResult?.riskScore || investigationContext?.domain_risk || 85;
+  const activeConfidence = investigationResult?.confidence || 91;
+  const activeQuality = investigationResult?.evidenceQuality || 96;
+
+  // Auto-fill domain from active investigation if empty
   useEffect(() => {
-    if (investigationContext?.domain && !domainInput) {
+    if (activeDomain && !domainInput) {
       setDomainScanState?.((prev) => ({
         ...prev,
-        domainInput: investigationContext.domain
+        domainInput: activeDomain
       }));
     }
-  }, [investigationContext, domainInput, setDomainScanState]);
+  }, [activeDomain, domainInput, setDomainScanState]);
 
   const [loading, setLoading] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -82,54 +92,21 @@ const DomainWatchTab = ({
     return () => clearInterval(timer);
   }, [loading]);
 
-  // The backend remains authoritative: this only forwards evidence already shown
-  // in the investigation drawer and renders its non-submitting assessment.
-  useEffect(() => {
-    if (!selectedCandidateDetail?.domain) {
-      setAbuseReadiness(null);
-      return;
-    }
-    const controller = new AbortController();
-    const evidence = {
-      sources: selectedCandidateDetail.sources || [],
-      domain_permutation: Boolean(selectedCandidateDetail.fuzzer),
-      visual_similarity: selectedCandidateDetail.visual_similarity || 0,
-      credential_indicators: Boolean(selectedCandidateDetail.credential_indicators),
-      login_form_detected: Boolean(selectedCandidateDetail.login_form_detected),
-      screenshot: selectedCandidateDetail.screenshot || { status: 'NOT_RUN' }
-    };
-    setAbuseReadiness(null);
-    setAbuseReadinessError(null);
-    fetch(`${apiBaseUrl}/api/abuse-response/evaluate`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-      body: JSON.stringify({
-        investigation_id: investigationState?.investigationId,
-        candidate_domain: selectedCandidateDetail.domain,
-        target_brand: investigationState?.brandName,
-        official_domain: investigationState?.officialDomain || domainInput,
-        evidence
-      })
-    })
-      .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok || body.status !== 'success') throw new Error(body.error || 'Assessment unavailable');
-        setAbuseReadiness(body.data);
-      })
-      .catch((error) => {
-        if (error.name !== 'AbortError') setAbuseReadinessError(error.message);
-      });
-    return () => controller.abort();
-  }, [selectedCandidateDetail, apiBaseUrl, investigationState?.investigationId, investigationState?.brandName, investigationState?.officialDomain, domainInput]);
+  // Fetch candidate details ONLY on explicit user selection, not on mount
+  const handleSelectCandidateDetail = (candidate) => {
+    setSelectedCandidateDetail(candidate);
+    if (!candidate?.domain) return;
 
-  useEffect(() => {
-    if (!selectedCandidateDetail?.domain) return setRegistrationIntel(null);
-    const controller = new AbortController();
-    fetch(`${apiBaseUrl}/api/domain-intelligence/registration/${encodeURIComponent(selectedCandidateDetail.domain)}`, { signal: controller.signal })
-      .then((r) => r.json()).then((body) => { if (body.status === 'success') setRegistrationIntel(body.data.registration_intelligence); })
-      .catch(() => { if (!controller.signal.aborted) setRegistrationIntel(null); });
-    return () => controller.abort();
-  }, [selectedCandidateDetail, apiBaseUrl]);
-  useEffect(() => { if (!selectedCandidateDetail?.domain) return setProviderIntel(null); const c=new AbortController(); fetch(`${apiBaseUrl}/api/domain-intelligence/infrastructure/${encodeURIComponent(selectedCandidateDetail.domain)}`,{signal:c.signal}).then(r=>r.json()).then(b=>{if(b.status==='success')setProviderIntel(b.data)}).catch(()=>{}); return()=>c.abort(); }, [selectedCandidateDetail, apiBaseUrl]);
+    fetch(`${apiBaseUrl}/api/domain-intelligence/registration/${encodeURIComponent(candidate.domain)}`)
+      .then((r) => r.json())
+      .then((body) => { if (body.status === 'success') setRegistrationIntel(body.data.registration_intelligence); })
+      .catch(() => setRegistrationIntel(null));
+
+    fetch(`${apiBaseUrl}/api/domain-intelligence/infrastructure/${encodeURIComponent(candidate.domain)}`)
+      .then((r) => r.json())
+      .then((body) => { if (body.status === 'success') setProviderIntel(body.data); })
+      .catch(() => setProviderIntel(null));
+  };
 
   const updateState = (updates) => {
     setDomainScanState((prev) => ({ ...prev, ...updates }));
@@ -431,7 +408,7 @@ const DomainWatchTab = ({
       </header>
 
       {/* STAGE 2 HARDENED THREAT INTELLIGENCE SUMMARY & CORRELATION SECTION */}
-      {investigationContext?.source === 'email' && (
+      {(investigationResult || investigationContext) && (
         <section className="bg-surface-container-lowest border border-primary/40 rounded-xl p-6 shadow-sm space-y-5 animate-fade-in">
           {/* TOP: Threat Intelligence Header */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-outline-variant pb-4">

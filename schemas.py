@@ -126,6 +126,8 @@ class LinkInfrastructureRequest(BaseModel):
     evidence_domains: Optional[List[Dict[str, Any]]] = []
     evidence_logos: Optional[List[Dict[str, Any]]] = []
     evidence_visual_phishing: Optional[List[Dict[str, Any]]] = []
+    investigation_id: Optional[str] = None
+    organisation_id: Optional[str] = None
 
 
 class LinkedAsset(BaseModel):
@@ -314,7 +316,108 @@ class AnalystOverrideRequest(BaseModel):
 class UrlIntelligenceRequest(BaseModel):
     url: str = Field(..., example="https://amazon-security-login.example/auth/login.html", description="Target URL to analyze")
     html_content: Optional[str] = Field(None, description="Optional static HTML content snippet")
+    official_domain: Optional[str] = Field(None, description="Known official domain e.g. amazon.com")
+    brand: Optional[str] = Field(None, description="Target brand name e.g. Amazon")
     quick_mode: Optional[bool] = Field(True, description="Whether to execute optimized fast scan")
+
+
+class PageAnalysisRequest(BaseModel):
+    url: str = Field(..., example="https://amaz0n-security-login.xyz/auth/login.html", description="Final landing URL to analyze")
+    brand: Optional[str] = Field(None, example="Amazon", description="Target brand name e.g. Amazon")
+    official_domain: Optional[str] = Field(None, example="amazon.com", description="Official brand domain e.g. amazon.com")
+    html_content: Optional[str] = Field(None, description="Optional pre-fetched static HTML content")
+
+
+class EntityIntelligenceRequest(BaseModel):
+    domain: str = Field(..., example="amaz0n-security-login.xyz", description="Target domain name for WHOIS/RDAP entity profiling")
+    investigation_id: Optional[str] = Field(None, example="INV-2026-001", description="Optional investigation identifier for data isolation")
+    use_cache: Optional[bool] = Field(True, description="Whether to use cached RDAP/WHOIS records")
+
+
+class AttackChainRequest(BaseModel):
+    investigation_id: Optional[str] = Field(None, example="INV-2026-001", description="Investigation identifier for attack chain tracing")
+    url: Optional[str] = Field(None, example="https://amaz0n-security-login.xyz/auth/login.html", description="Target URL to trace attack path")
+    email_data: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Email analysis payload snapshot")
+    page_analysis: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Phase 6 page analysis snapshot")
+
+
+class InvestigationAnalysisRequest(BaseModel):
+    investigation_id: str = Field(..., example="INV-2026-001", description="Investigation identifier to analyze")
+    organisation_id: Optional[str] = Field("org_acme_01", example="org_acme_01", description="Organisation identifier")
+    url: Optional[str] = Field(None, example="https://amaz0n-security-login.xyz/auth/login.html", description="Optional target URL to analyze")
+    email_data: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Optional email analysis input")
+
+
+# =========================================================
+# PHASE 1 — UNIFIED ATTACK CHAIN FOUNDATION SCHEMAS
+# =========================================================
+
+class EvidenceItemSchema(BaseModel):
+    evidence_id: str = Field(..., description="Unique identifier for evidence item")
+    investigation_id: str = Field(..., description="Scoped investigation ID")
+    organisation_id: Optional[str] = Field("org_acme_01", description="Organisation identifier")
+    stage: str = Field(..., description="Analysis stage e.g. MESSAGE, SENDER, URL, RDAP, DNS, DOM, VISUAL")
+    type: str = Field(..., description="Specific signal type e.g. credential_phishing_keywords, domain_age")
+    source: str = Field(..., description="Originating service tool e.g. email_content, rdap, page_analyzer")
+    value: Any = Field(..., description="Extracted raw value")
+    normalized_value: Optional[Any] = Field(None, description="Normalized representation for correlation")
+    severity: int = Field(0, description="Severity score contribution (0-100)")
+    confidence: float = Field(1.0, description="Confidence factor (0.0-1.0)")
+    timestamp: str = Field(..., description="ISO 8601 observation timestamp")
+    provenance: Dict[str, Any] = Field(default_factory=dict, description="Source provenance metadata")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional context metadata")
+    related_entity_ids: List[str] = Field(default_factory=list, description="IDs of graph nodes related to evidence")
+
+
+class GraphNodeSchema(BaseModel):
+    id: str = Field(..., description="Stable node ID within investigation")
+    type: str = Field(..., description="Entity node type e.g. EMAIL, SENDER, URL, DOMAIN, IP, LANDING_PAGE")
+    label: str = Field(..., description="Human-readable node label")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Node attributes and telemetry")
+
+
+class GraphEdgeSchema(BaseModel):
+    source: str = Field(..., description="Source node ID")
+    target: str = Field(..., description="Target node ID")
+    relationship: str = Field(..., description="Directed relationship type e.g. CONTAINS_URL, RESOLVES_TO, LANDS_ON")
+    evidence: str = Field(..., description="Human-readable justification text")
+    confidence: float = Field(90.0, description="Edge confidence percentage")
+    source_provider: str = Field("chain_tracer", description="Originating provider service")
+    observed_at: str = Field(..., description="ISO 8601 observation timestamp")
+
+
+class HypothesisSchema(BaseModel):
+    hypothesis_id: str = Field(..., description="Hypothesis identifier e.g. EXTERNAL_IMPERSONATION")
+    label: str = Field(..., description="Human-readable title")
+    description: str = Field(..., description="Detailed hypothesis justification")
+    confidence: float = Field(..., description="Confidence percentage")
+    triggering_signals: List[str] = Field(default_factory=list, description="List of signal keys causing hypothesis")
+    supporting_evidence_ids: List[str] = Field(default_factory=list, description="IDs of supporting evidence items")
+
+
+class EvidenceGroupSchema(BaseModel):
+    group_id: str = Field(..., description="Unique evidence group ID")
+    category: str = Field(..., description="Categorization: INDEPENDENT, CORROBORATING, or DUPLICATE")
+    primary_signal: str = Field(..., description="Primary signal key")
+    underlying_fact: str = Field(..., description="Underlying security fact description")
+    signals: List[Dict[str, Any]] = Field(default_factory=list, description="Member signals in group")
+    effective_severity: int = Field(0, description="Deduplicated severity contribution")
+
+
+class AttackChainResponse(BaseModel):
+    investigation_id: str = Field(..., description="Investigation identifier")
+    nodes: List[GraphNodeSchema] = Field(default_factory=list, description="Unique attack graph entity nodes")
+    edges: List[GraphEdgeSchema] = Field(default_factory=list, description="Directed evidence relationship edges")
+    hypotheses: List[HypothesisSchema] = Field(default_factory=list, description="Cross-stage attack hypotheses")
+    evidence_groups: List[EvidenceGroupSchema] = Field(default_factory=list, description="Deduplicated evidence groups")
+    evidence_items: List[EvidenceItemSchema] = Field(default_factory=list, description="Standardized evidence items")
+    metrics: Dict[str, Any] = Field(default_factory=dict, description="Independent risk_score, confidence, evidence_quality")
+    chain_summary: List[str] = Field(default_factory=list, description="Human-readable execution steps")
+    provenance: Dict[str, Any] = Field(default_factory=dict, description="Lineage metadata")
+
+
+
+
 
 
 

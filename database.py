@@ -33,6 +33,8 @@ def init_db():
             confidence REAL,
             intent_label TEXT,
             intent_confidence REAL,
+            investigation_id TEXT,
+            organisation_id TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             metadata_json TEXT
         )
@@ -45,6 +47,10 @@ def init_db():
         cursor.execute("ALTER TABLE assets ADD COLUMN intent_label TEXT")
     if "intent_confidence" not in columns:
         cursor.execute("ALTER TABLE assets ADD COLUMN intent_confidence REAL")
+    if "investigation_id" not in columns:
+        cursor.execute("ALTER TABLE assets ADD COLUMN investigation_id TEXT")
+    if "organisation_id" not in columns:
+        cursor.execute("ALTER TABLE assets ADD COLUMN organisation_id TEXT")
     if "sources_json" not in columns:
         cursor.execute("ALTER TABLE assets ADD COLUMN sources_json TEXT")
     if "is_known_phishing" not in columns:
@@ -56,6 +62,7 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_ip ON assets(ip_address)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_phash ON assets(phash)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_brand ON assets(target_brand)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_investigation ON assets(investigation_id)")
 
     # Timeline event audit log table
     cursor.execute("""
@@ -124,16 +131,21 @@ def insert_scanned_asset(
     confidence: Optional[float] = None,
     intent_label: Optional[str] = None,
     intent_confidence: Optional[float] = None,
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None,
+    investigation_id: Optional[str] = None,
+    organisation_id: Optional[str] = None
 ):
     """
-    Inserts or updates a scanned asset fingerprint in SQLite.
+    Inserts or updates a scanned asset fingerprint in SQLite, scoped by investigation_id and organisation_id.
     """
     init_db()
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT id FROM assets WHERE asset_id = ? AND asset_type = ?", (asset_id, asset_type))
+    if investigation_id:
+        cursor.execute("SELECT id FROM assets WHERE asset_id = ? AND asset_type = ? AND (investigation_id = ? OR investigation_id IS NULL)", (asset_id, asset_type, investigation_id))
+    else:
+        cursor.execute("SELECT id FROM assets WHERE asset_id = ? AND asset_type = ?", (asset_id, asset_type))
     row = cursor.fetchone()
 
     meta_str = json.dumps(metadata or {})
@@ -149,32 +161,45 @@ def insert_scanned_asset(
                 confidence = COALESCE(?, confidence),
                 intent_label = COALESCE(?, intent_label),
                 intent_confidence = COALESCE(?, intent_confidence),
+                investigation_id = COALESCE(?, investigation_id),
+                organisation_id = COALESCE(?, organisation_id),
                 metadata_json = ?
             WHERE id = ?
-        """, (ip_address, registrar, phash, dhash, target_brand, confidence, intent_label, intent_confidence, meta_str, row["id"]))
+        """, (ip_address, registrar, phash, dhash, target_brand, confidence, intent_label, intent_confidence, investigation_id, organisation_id, meta_str, row["id"]))
     else:
         cursor.execute("""
-            INSERT INTO assets (asset_type, asset_id, ip_address, registrar, phash, dhash, target_brand, confidence, intent_label, intent_confidence, metadata_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (asset_type, asset_id, ip_address, registrar, phash, dhash, target_brand, confidence, intent_label, intent_confidence, meta_str))
+            INSERT INTO assets (asset_type, asset_id, ip_address, registrar, phash, dhash, target_brand, confidence, intent_label, intent_confidence, investigation_id, organisation_id, metadata_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (asset_type, asset_id, ip_address, registrar, phash, dhash, target_brand, confidence, intent_label, intent_confidence, investigation_id, organisation_id, meta_str))
 
     conn.commit()
     conn.close()
 
 
-def fetch_all_assets() -> List[Dict[str, Any]]:
+def fetch_all_assets(investigation_id: Optional[str] = None, organisation_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Fetches all recorded asset fingerprints from SQLite.
+    Fetches recorded asset fingerprints from SQLite.
+    If investigation_id is provided, filters strictly to assets belonging to that investigation.
     """
     init_db()
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM assets ORDER BY id DESC")
+
+    if investigation_id and organisation_id:
+        cursor.execute("SELECT * FROM assets WHERE investigation_id = ? AND organisation_id = ? ORDER BY id DESC", (investigation_id, organisation_id))
+    elif investigation_id:
+        cursor.execute("SELECT * FROM assets WHERE investigation_id = ? ORDER BY id DESC", (investigation_id,))
+    elif organisation_id:
+        cursor.execute("SELECT * FROM assets WHERE organisation_id = ? ORDER BY id DESC", (organisation_id,))
+    else:
+        cursor.execute("SELECT * FROM assets ORDER BY id DESC")
+
     rows = cursor.fetchall()
     conn.close()
 
     results = []
     for r in rows:
+        r_keys = r.keys()
         results.append({
             "id": r["id"],
             "asset_type": r["asset_type"],
@@ -185,8 +210,10 @@ def fetch_all_assets() -> List[Dict[str, Any]]:
             "dhash": r["dhash"],
             "target_brand": r["target_brand"],
             "confidence": r["confidence"],
-            "intent_label": r["intent_label"] if "intent_label" in r.keys() else None,
-            "intent_confidence": r["intent_confidence"] if "intent_confidence" in r.keys() else None,
+            "intent_label": r["intent_label"] if "intent_label" in r_keys else None,
+            "intent_confidence": r["intent_confidence"] if "intent_confidence" in r_keys else None,
+            "investigation_id": r["investigation_id"] if "investigation_id" in r_keys else None,
+            "organisation_id": r["organisation_id"] if "organisation_id" in r_keys else None,
             "created_at": r["created_at"],
             "metadata": json.loads(r["metadata_json"] or "{}")
         })

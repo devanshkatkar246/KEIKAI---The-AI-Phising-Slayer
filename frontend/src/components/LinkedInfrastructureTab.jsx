@@ -37,7 +37,8 @@ const LinkedInfrastructureTab = ({
   selectedVisualPhishing = [],
   brandName = '',
   handleAddClusterToCase = () => {},
-  toggleSelectDomain = () => {}
+  toggleSelectDomain = () => {},
+  investigationResult
 }) => {
   const [activeView, setActiveView] = useState('clusters'); // 'clusters' or 'case'
   const [loading, setLoading] = useState(false);
@@ -54,6 +55,8 @@ const LinkedInfrastructureTab = ({
   const [zoomScale, setZoomScale] = useState(1.0);
   const [hoveredNode, setHoveredNode] = useState(null);
   const [hoveredEdge, setHoveredEdge] = useState(null);
+
+  const isFetchedRef = useRef(false);
 
   // Derive active brand context
   const activeBrand = selectedDomains.length > 0 && selectedDomains[0].domain
@@ -117,12 +120,12 @@ const LinkedInfrastructureTab = ({
   };
 
   useEffect(() => {
-    fetchClusters();
-  }, [apiBaseUrl, activeBrand]);
-
-  useEffect(() => {
-    fetchCaseLinks();
-  }, [selectedDomains, selectedLogos, selectedVisualPhishing, apiBaseUrl]);
+    if (!isFetchedRef.current) {
+      isFetchedRef.current = true;
+      fetchClusters();
+      fetchCaseLinks();
+    }
+  }, []);
 
   // Render Canvas Network Graph
   useEffect(() => {

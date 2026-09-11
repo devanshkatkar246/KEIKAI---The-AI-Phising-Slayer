@@ -76,7 +76,8 @@ def is_safe_external_target(url_or_domain: str) -> Tuple[bool, str]:
             for addr in addrs:
                 ip_str = addr[4][0]
                 ip_obj = ipaddress.ip_address(ip_str)
-                if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_reserved or ip_str == "169.254.169.254":
+                is_nat64 = ip_str.startswith("64:ff9b:")
+                if (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or (ip_obj.is_reserved and not is_nat64)) or ip_str == "169.254.169.254":
                     return False, f"Blocked SSRF IP address '{ip_str}' for domain '{hostname}'"
         except socket.gaierror:
             pass  # DNS resolution failures handled downstream

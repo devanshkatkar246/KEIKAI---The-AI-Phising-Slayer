@@ -319,6 +319,7 @@ def evaluate_sender_behavior(
 
     return {
         "profile_available": True,
+        "source_classification": "SIMULATED_ORGANISATIONAL_BASELINE",
         "sender": clean_sender,
         "sender_domain": sender_domain,
         "role": profile["role"],
@@ -343,3 +344,37 @@ def evaluate_sender_behavior(
         "observed": observed_facts,
         "explanation": explanation
     }
+
+
+class SenderTelemetryProvider:
+    """
+    Abstract interface for organisational sender behavior telemetry providers.
+    Allows future integrations (M365, Google Workspace, Mail Gateway, SIEM) without modifying core decision logic.
+    """
+
+    def fetch_sender_profile(self, sender_email: str, org_id: str = "org_acme_01") -> Optional[Dict[str, Any]]:
+        raise NotImplementedError("Subclasses must implement fetch_sender_profile")
+
+    def get_telemetry_source(self) -> str:
+        raise NotImplementedError("Subclasses must implement get_telemetry_source")
+
+
+class SyntheticSenderTelemetryProvider(SenderTelemetryProvider):
+    """
+    Default demonstration provider returning synthetic organizational profiles.
+    """
+
+    def fetch_sender_profile(self, sender_email: str, org_id: str = "org_acme_01") -> Optional[Dict[str, Any]]:
+        org = ORGANISATION_BASELINES.get(org_id, ORGANISATION_BASELINES["org_acme_01"])
+        return org.get("senders", {}).get(sender_email.lower())
+
+    def get_telemetry_source(self) -> str:
+        return "SIMULATED_ORGANISATIONAL_BASELINE"
+
+
+def get_sender_behavior_telemetry(sender: str, organisation_id: str = "org_acme_01", **kwargs) -> Dict[str, Any]:
+    """
+    Convenience wrapper returning sender behavioral telemetry for an organization.
+    """
+    return evaluate_sender_behavior(sender=sender, org_id=organisation_id, **kwargs)
+

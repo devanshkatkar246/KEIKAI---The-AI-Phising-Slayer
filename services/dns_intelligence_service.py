@@ -247,6 +247,7 @@ def resolve_dns_records(domain: str, use_cache: bool = True) -> Dict[str, Any]:
         resolved_ips_list.append(ip_meta)
         reverse_dns_list.append({"ip": ip_val, "ptr": ptr_val or "No PTR record"})
 
+    now_iso = _get_utc_timestamp()
     result = {
         "domain": clean_domain,
         "dns_status": overall_status,
@@ -259,7 +260,13 @@ def resolve_dns_records(domain: str, use_cache: bool = True) -> Dict[str, Any]:
         },
         "resolved_ips": resolved_ips_list,
         "reverse_dns": reverse_dns_list,
-        "lookup_timestamp": _get_utc_timestamp()
+        "lookup_timestamp": now_iso,
+        "provenance": {
+            "source": "dns",
+            "status": overall_status,
+            "live": overall_status == "DNS_SUCCESS",
+            "retrieved_at": now_iso
+        }
     }
 
     if use_cache:
@@ -280,6 +287,7 @@ def _deduplicate_records(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _build_dns_error_response(domain: str, status: str, error_message: str) -> Dict[str, Any]:
+    now_iso = _get_utc_timestamp()
     return {
         "domain": domain,
         "dns_status": status,
@@ -292,5 +300,12 @@ def _build_dns_error_response(domain: str, status: str, error_message: str) -> D
         "resolved_ips": [],
         "reverse_dns": [],
         "error_message": error_message,
-        "lookup_timestamp": _get_utc_timestamp()
+        "lookup_timestamp": now_iso,
+        "provenance": {
+            "source": "dns",
+            "status": status,
+            "live": False,
+            "retrieved_at": now_iso,
+            "reason": error_message
+        }
     }

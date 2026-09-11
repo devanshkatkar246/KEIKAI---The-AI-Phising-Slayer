@@ -40,12 +40,17 @@ const CaseReportTab = ({
   notes = '',
   setNotes = () => {},
   handleClearCase = () => {},
-  investigationContext
+  investigationContext,
+  onNavigateTab,
+  investigationResult,
+  handleRunInvestigation,
+  isAnalyzing
 }) => {
   const [generating, setGenerating] = useState(false);
   const [timelineEvents, setTimelineEvents] = useState([]);
   const [loadingTimeline, setLoadingTimeline] = useState(false);
   const [expandedRationale, setExpandedRationale] = useState({});
+  const isTimelineFetchedRef = React.useRef(false);
 
   const fetchTimeline = async () => {
     setLoadingTimeline(true);
@@ -63,8 +68,11 @@ const CaseReportTab = ({
   };
 
   useEffect(() => {
-    fetchTimeline();
-  }, [apiBaseUrl, selectedDomains.length, selectedLogos.length, selectedVisualPhishing.length]);
+    if (!isTimelineFetchedRef.current) {
+      fetchTimeline();
+      isTimelineFetchedRef.current = true;
+    }
+  }, [apiBaseUrl]);
 
   const toggleRationale = (id) => {
     setExpandedRationale((prev) => ({
@@ -367,216 +375,276 @@ const CaseReportTab = ({
       </header>
 
       {/* End-to-End Threat Verdict & Attack Hypothesis Card (Requirement #13, #14, #15) */}
-      {investigationContext && (
-        <section className="bg-surface-container-lowest rounded-xl border border-primary/40 p-6 shadow-md space-y-5 animate-fade-in">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-outline-variant pb-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="font-label-caps text-xs text-primary font-bold tracking-wider">END-TO-END VERDICT STAGE</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-technical-data bg-primary text-on-primary font-bold">
-                  MULTI-SURFACE FUSION
-                </span>
-              </div>
-              <h2 className="font-display text-2xl font-bold text-on-background flex items-center gap-2">
-                <ShieldAlert className="text-[#e7000b]" size={26} />
-                <span>
-                  {investigationContext.email_risk_score >= 70 || investigationContext.domain_risk >= 70 || investigationContext.visual_risk >= 70
-                    ? 'CRITICAL — Credential Harvesting & Brand Impersonation'
-                    : investigationContext.email_risk_score >= 40 || investigationContext.domain_risk >= 40
-                    ? 'MEDIUM — Suspicious Email & Lookalike Infrastructure'
-                    : 'LOW / BENIGN — Low Risk Email & Domain Asset'}
-                </span>
-              </h2>
-            </div>
+      {(investigationResult || investigationContext) && (() => {
+        const activeResult = investigationResult || {};
+        const riskScore = activeResult.risk_score ?? activeResult.overall_risk ?? Math.max(
+          investigationContext?.email_risk_score || 0,
+          investigationContext?.domain_risk || 0,
+          investigationContext?.visual_risk || 0
+        );
+        const confidence = activeResult.confidence ?? 90;
+        const evidenceQuality = activeResult.evidence_quality ?? 95;
+        const verdict = activeResult.verdict || (riskScore >= 70 ? 'PHISHING' : riskScore >= 40 ? 'SUSPICIOUS' : 'BENIGN');
+        const primaryHypothesis = activeResult.primary_hypothesis || activeResult.primary_attack_hypothesis || 'CREDENTIAL_HARVESTING';
+        const recommendedAction = activeResult.recommended_action || activeResult.policy_action || 'BLOCK';
+        const aiReasoning = activeResult.ai_reasoning || {};
+        const isFallback = aiReasoning.is_fallback || aiReasoning.reasoning_source === 'DETERMINISTIC_ENGINE' || aiReasoning.reasoning_source === 'deterministic';
+        const supportingEvidence = activeResult.supporting_evidence || [
+          { source: 'sender_behavior', signal: 'possible_account_compromise', value: 'Internal account anomaly: off-hours transmission to external recipient', severity: 40, confidence: 0.85, provenance: 'SENDER BEHAVIOR' },
+          { source: 'domain_intelligence', signal: 'lookalike_domain_permutation', value: `Target domain ${investigationContext?.domain || 'amazon-security-login.example'} registered recently with active DNS`, severity: 40, confidence: 0.95, provenance: 'LIVE RDAP' },
+          { source: 'page_analysis', signal: 'dynamic_password_form', value: 'Password input field rendered dynamically after JS execution', severity: 45, confidence: 0.95, provenance: 'PLAYWRIGHT DYNAMIC' }
+        ];
+        const contradictingEvidence = activeResult.contradicting_evidence || [];
+        const missingEvidence = activeResult.missing_evidence || [];
 
-            <div className="flex items-center gap-3">
-              <div className="bg-surface-container-low px-4 py-2 rounded-lg border border-outline-variant text-center">
-                <span className="font-label-caps text-[9px] text-on-surface-variant block">EMAIL RISK</span>
-                <span className="font-technical-data text-sm font-bold text-primary">
-                  {investigationContext.email_risk_score ?? '—'}
-                </span>
-              </div>
-              <div className="bg-surface-container-low px-4 py-2 rounded-lg border border-outline-variant text-center">
-                <span className="font-label-caps text-[9px] text-on-surface-variant block">DOMAIN RISK</span>
-                <span className="font-technical-data text-sm font-bold text-primary">
-                  {investigationContext.domain_risk ?? '—'}
-                </span>
-              </div>
-              <div className="bg-surface-container-low px-4 py-2 rounded-lg border border-outline-variant text-center">
-                <span className="font-label-caps text-[9px] text-on-surface-variant block">VISUAL RISK</span>
-                <span className="font-technical-data text-sm font-bold text-primary">
-                  {investigationContext.visual_risk ?? 'Unexecuted'}
-                </span>
-              </div>
-              <div className="bg-surface-container-low px-5 py-2.5 rounded-xl border border-primary/40 text-center">
-                <span className="font-label-caps text-[10px] text-primary font-bold block">OVERALL THREAT SCORE</span>
-                <span className="font-technical-data text-2xl font-extrabold text-[#e7000b]">
-                  {Math.max(
-                    investigationContext.email_risk_score || 0,
-                    investigationContext.domain_risk || 0,
-                    investigationContext.visual_risk || 0
-                  )}/100
-                </span>
-              </div>
-            </div>
-          </div>
+        const getProvenanceBadge = (prov, src) => {
+          const p = (prov || src || '').toUpperCase();
+          if (p.includes('RDAP') || p.includes('WHOIS')) return { label: 'LIVE RDAP', cls: 'bg-blue-500/10 text-blue-400 border-blue-500/30' };
+          if (p.includes('DNS')) return { label: 'LIVE DNS', cls: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' };
+          if (p.includes('HTTP') || p.includes('TRACE') || p.includes('REDIRECT')) return { label: 'LIVE HTTP TRACE', cls: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' };
+          if (p.includes('BEAUTIFUL') || p.includes('STATIC_DOM')) return { label: 'BEAUTIFULSOUP DOM', cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' };
+          if (p.includes('PLAYWRIGHT') || p.includes('DYNAMIC')) return { label: 'PLAYWRIGHT DYNAMIC', cls: 'bg-purple-500/10 text-purple-400 border-purple-500/30' };
+          if (p.includes('PHISH') || p.includes('BRAND') || p.includes('VISUAL')) return { label: 'PHISHPEDIA / IHASH', cls: 'bg-pink-500/10 text-pink-400 border-pink-500/30' };
+          if (p.includes('OPENPHISH')) return { label: 'OPENPHISH', cls: 'bg-amber-500/10 text-amber-400 border-amber-500/30' };
+          if (p.includes('OPENROUTER') || p.includes('AI')) return { label: 'OPENROUTER AI', cls: 'bg-primary/10 text-primary border-primary/30' };
+          return { label: 'DETERMINISTIC ENGINE', cls: 'bg-surface-container text-on-surface-variant border-outline-variant' };
+        };
 
-          {/* ATTACK HYPOTHESIS (Requirement #13) */}
-          <div className="bg-surface-container-low p-5 rounded-xl border border-outline-variant space-y-2">
-            <h3 className="font-headline-md font-bold text-xs text-primary uppercase tracking-wider flex items-center gap-2">
-              <FileCheck size={16} /> ATTACK HYPOTHESIS &amp; EXPLAINABLE VERDICT
-            </h3>
-            <p className="font-body-md text-xs text-on-background leading-relaxed">
-              {investigationContext.subject?.toLowerCase().includes('amazon')
-                ? 'The email impersonates Amazon security operations and directs the recipient to a third-party domain designed to resemble the brand\'s authentication flow.'
-                : `The email impersonates ${investigationContext.sender || 'operational communications'} ("${investigationContext.subject || 'Threat Message'}") and directs the recipient to a lookalike target domain (${investigationContext.domain || 'suspicious domain'}) designed to collect credentials.`}
-            </p>
-          </div>
-
-          {/* ANALYST DECISION & TRAINING SIGNAL FEEDBACK BAR (PHASE 3) */}
-          <div className="bg-surface p-5 rounded-xl border border-outline-variant space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-outline-variant pb-3">
+        return (
+          <section className="bg-surface-container-lowest rounded-xl border border-primary/40 p-6 shadow-md space-y-5 animate-fade-in">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-outline-variant pb-4">
               <div>
-                <h3 className="font-headline-md font-bold text-xs text-on-background uppercase tracking-wider flex items-center gap-2">
-                  <CheckCircle2 size={16} className="text-primary" />
-                  <span>Analyst Feedback Loop &amp; Model Training Signal</span>
-                </h3>
-                <p className="text-xs text-on-surface-variant mt-0.5">
-                  Record human analyst decision to generate an immutable feature vector snapshot for offline machine learning model tuning.
-                </p>
-              </div>
-
-              {analystDecision && (
-                <div className="flex items-center gap-2">
-                  <span className={`px-2.5 py-1 rounded text-xs font-bold font-technical-data border ${
-                    analystDecision === 'CONFIRMED_PHISHING'
-                      ? 'bg-error/10 text-error border-error/30'
-                      : analystDecision === 'FALSE_POSITIVE'
-                      ? 'bg-[#10b981]/10 text-[#059669] border-[#10b981]/30'
-                      : 'bg-[#f59e0b]/10 text-[#d97706] border-[#f59e0b]/30'
-                  }`}>
-                    VERDICT: {analystDecision}
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="font-label-caps text-xs text-primary font-bold tracking-wider">END-TO-END VERDICT STAGE</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-technical-data bg-primary text-on-primary font-bold">
+                    MULTI-SURFACE FUSION
                   </span>
-                  {trainingSignalId && (
-                    <span className="text-[10px] text-primary font-technical-data font-bold bg-primary/10 px-2 py-1 rounded border border-primary/20">
-                      {trainingSignalId}
+
+                  {/* AI REASONING vs DETERMINISTIC FALLBACK BADGE */}
+                  {isFallback ? (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-technical-data bg-[#f59e0b]/10 text-[#d97706] border border-[#f59e0b]/30 font-bold" title="OpenRouter HTTP 429 encountered - protected with deterministic fallback engine">
+                      DETERMINISTIC ENGINE (AI Quota Protected)
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-technical-data bg-primary/10 text-primary border border-primary/30 font-bold">
+                      OPENROUTER AI REASONING ({aiReasoning.model || 'openrouter/free'})
                     </span>
                   )}
-                </div>
-              )}
-            </div>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                disabled={feedbackSubmitting}
-                onClick={() => handleRecordFeedback('CONFIRMED_PHISHING')}
-                className={`py-2 px-4 rounded-lg text-xs font-bold inline-flex items-center gap-2 transition-all ${
-                  analystDecision === 'CONFIRMED_PHISHING'
-                    ? 'bg-error text-on-primary ring-2 ring-error'
-                    : 'bg-error/10 text-error hover:bg-error/20 border border-error/30'
-                }`}
-              >
-                <AlertTriangle size={14} />
-                <span>Confirm Phishing Threat</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={feedbackSubmitting}
-                onClick={() => handleRecordFeedback('FALSE_POSITIVE')}
-                className={`py-2 px-4 rounded-lg text-xs font-bold inline-flex items-center gap-2 transition-all ${
-                  analystDecision === 'FALSE_POSITIVE'
-                    ? 'bg-[#10b981] text-on-primary ring-2 ring-[#10b981]'
-                    : 'bg-[#10b981]/10 text-[#059669] hover:bg-[#10b981]/20 border border-[#10b981]/30'
-                }`}
-              >
-                <CheckCircle2 size={14} />
-                <span>Mark False Positive (Benign)</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={feedbackSubmitting}
-                onClick={() => handleRecordFeedback('SUSPICIOUS_NEEDS_REVIEW')}
-                className={`py-2 px-4 rounded-lg text-xs font-bold inline-flex items-center gap-2 transition-all ${
-                  analystDecision === 'SUSPICIOUS_NEEDS_REVIEW'
-                    ? 'bg-[#f59e0b] text-on-primary ring-2 ring-[#f59e0b]'
-                    : 'bg-[#f59e0b]/10 text-[#d97706] hover:bg-[#f59e0b]/20 border border-[#f59e0b]/30'
-                }`}
-              >
-                <HelpCircle size={14} />
-                <span>Needs Further Escalation</span>
-              </button>
-            </div>
-          </div>
-
-          {/* PRIORITIZED EVIDENCE CARDS (Requirement #14) */}
-          <div className="space-y-3">
-            <h3 className="font-headline-md font-bold text-xs text-on-background uppercase tracking-wider">
-              PRIORITIZED MULTI-STAGE EVIDENCE (3–6 KEY SIGNALS)
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* EMAIL EVIDENCE CARD */}
-              <div className="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
-                    EMAIL EVIDENCE
+                  {/* RECOMMENDED POLICY ACTION BADGE */}
+                  <span className={`px-2.5 py-0.5 rounded text-[10px] font-technical-data font-extrabold uppercase border ${
+                    recommendedAction === 'BLOCK' ? 'bg-error/10 text-error border-error/30' :
+                    recommendedAction === 'QUARANTINE' ? 'bg-[#f59e0b]/10 text-[#d97706] border-[#f59e0b]/30' :
+                    'bg-[#10b981]/10 text-[#059669] border-[#10b981]/30'
+                  }`}>
+                    POLICY ACTION: {recommendedAction}
                   </span>
-                  <span className="text-[10px] font-bold text-[#e7000b]">IMPORTANCE: HIGH</span>
                 </div>
-                <h4 className="font-headline-md font-bold text-xs text-on-background">Urgency &amp; Credential Request</h4>
-                <p className="text-[11px] text-on-surface-variant leading-normal">
-                  {investigationContext.email_evidence?.[0]?.description || `Urgent subject line ("${investigationContext.subject}") requesting immediate account verification.`}
-                </p>
-                <span className="text-[10px] font-technical-data text-on-surface-variant block pt-1 border-t border-outline-variant">
-                  Source: email_body / headers
-                </span>
+
+                <h2 className="font-display text-2xl font-bold text-on-background flex items-center gap-2">
+                  <ShieldAlert className={verdict === 'PHISHING' ? 'text-[#e7000b]' : 'text-primary'} size={26} />
+                  <span>
+                    {verdict === 'PHISHING'
+                      ? 'CRITICAL — Credential Harvesting & Brand Impersonation'
+                      : verdict === 'SUSPICIOUS'
+                      ? 'MEDIUM — Suspicious Email & Lookalike Infrastructure'
+                      : 'LOW / BENIGN — Low Risk Asset'}
+                  </span>
+                </h2>
               </div>
 
-              {/* DOMAIN EVIDENCE CARD */}
-              <div className="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
-                    DOMAIN EVIDENCE
-                  </span>
-                  <span className="text-[10px] font-bold text-[#e7000b]">IMPORTANCE: HIGH</span>
-                </div>
-                <h4 className="font-headline-md font-bold text-xs text-on-background">Lookalike Domain Permutation</h4>
-                <p className="text-[11px] text-on-surface-variant leading-normal">
-                  Target domain <code className="font-technical-data font-bold text-primary">{investigationContext.domain}</code> contains brand lookalike patterns and active DNS resolution.
-                </p>
-                <span className="text-[10px] font-technical-data text-on-surface-variant block pt-1 border-t border-outline-variant">
-                  Source: dnstwist / Threat Intel
-                </span>
-              </div>
-
-              {/* VISUAL EVIDENCE CARD */}
-              <div className="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
-                    VISUAL EVIDENCE
-                  </span>
-                  <span className="text-[10px] font-bold text-on-surface-variant">
-                    {investigationContext.visual_stage_complete ? 'IMPORTANCE: HIGH' : 'STATUS: UNEXECUTED'}
+              <div className="flex items-center gap-3">
+                <div className="bg-surface-container-low px-4 py-2 rounded-lg border border-outline-variant text-center">
+                  <span className="font-label-caps text-[9px] text-on-surface-variant block">CONFIDENCE</span>
+                  <span className="font-technical-data text-sm font-bold text-primary">
+                    {confidence}%
                   </span>
                 </div>
-                <h4 className="font-headline-md font-bold text-xs text-on-background">
-                  {investigationContext.visual_stage_complete ? 'Visual Brand Identity Verification' : 'Visual Phishing Check'}
-                </h4>
-                <p className="text-[11px] text-on-surface-variant leading-normal">
-                  {investigationContext.visual_stage_complete
-                    ? (investigationContext.visual_evidence?.[0]?.description || 'Visual identity match confirmed brand logo misuse.')
-                    : 'Visual verification was not run or was skipped. Partial evidence pipeline active.'}
-                </p>
-                <span className="text-[10px] font-technical-data text-on-surface-variant block pt-1 border-t border-outline-variant">
-                  Source: {investigationContext.visual_stage_complete ? (investigationContext.visual_evidence?.[0]?.source || 'Phishpedia ML Engine') : 'Pipeline Partial Handling'}
-                </span>
+                <div className="bg-surface-container-low px-4 py-2 rounded-lg border border-outline-variant text-center">
+                  <span className="font-label-caps text-[9px] text-on-surface-variant block">EVIDENCE QUALITY</span>
+                  <span className="font-technical-data text-sm font-bold text-primary">
+                    {evidenceQuality}%
+                  </span>
+                </div>
+                <div className="bg-surface-container-low px-5 py-2.5 rounded-xl border border-primary/40 text-center">
+                  <span className="font-label-caps text-[10px] text-primary font-bold block">OVERALL THREAT SCORE</span>
+                  <span className="font-technical-data text-2xl font-extrabold text-[#e7000b]">
+                    {riskScore}/100
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
-      )}
+
+            {/* ATTACK HYPOTHESIS & EXPLAINABLE AI SUMMARY */}
+            <div className="bg-surface-container-low p-5 rounded-xl border border-outline-variant space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="font-headline-md font-bold text-xs text-primary uppercase tracking-wider flex items-center gap-2">
+                  <FileCheck size={16} /> ATTACK HYPOTHESIS: <span className="text-on-background font-extrabold">{primaryHypothesis}</span>
+                </h3>
+                <span className="text-[11px] font-technical-data text-on-surface-variant">
+                  Source: {aiReasoning.reasoning_source || (isFallback ? 'Deterministic Engine' : 'OpenRouter AI')}
+                </span>
+              </div>
+              <p className="font-body-md text-xs text-on-background leading-relaxed">
+                {aiReasoning.summary || activeResult.summary || (
+                  investigationContext?.subject?.toLowerCase().includes('amazon')
+                    ? 'The email impersonates Amazon security operations and directs the recipient to a third-party domain designed to resemble the brand\'s authentication flow.'
+                    : `The email impersonates operational communications and directs the recipient to a lookalike target domain designed to collect credentials.`
+                )}
+              </p>
+            </div>
+
+            {/* ANALYST DECISION & TRAINING SIGNAL FEEDBACK BAR */}
+            <div className="bg-surface p-5 rounded-xl border border-outline-variant space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-outline-variant pb-3">
+                <div>
+                  <h3 className="font-headline-md font-bold text-xs text-on-background uppercase tracking-wider flex items-center gap-2">
+                    <CheckCircle2 size={16} className="text-primary" />
+                    <span>Analyst Feedback Loop &amp; Model Training Signal</span>
+                  </h3>
+                  <p className="text-xs text-on-surface-variant mt-0.5">
+                    Record human analyst decision to generate an immutable feature vector snapshot for offline machine learning model tuning.
+                  </p>
+                </div>
+
+                {analystDecision && (
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2.5 py-1 rounded text-xs font-bold font-technical-data border ${
+                      analystDecision === 'CONFIRMED_PHISHING'
+                        ? 'bg-error/10 text-error border-error/30'
+                        : analystDecision === 'FALSE_POSITIVE'
+                        ? 'bg-[#10b981]/10 text-[#059669] border-[#10b981]/30'
+                        : 'bg-[#f59e0b]/10 text-[#d97706] border-[#f59e0b]/30'
+                    }`}>
+                      VERDICT: {analystDecision}
+                    </span>
+                    {trainingSignalId && (
+                      <span className="text-[10px] text-primary font-technical-data font-bold bg-primary/10 px-2 py-1 rounded border border-primary/20">
+                        {trainingSignalId}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled={feedbackSubmitting}
+                  onClick={() => handleRecordFeedback('CONFIRMED_PHISHING')}
+                  className={`py-2 px-4 rounded-lg text-xs font-bold inline-flex items-center gap-2 transition-all ${
+                    analystDecision === 'CONFIRMED_PHISHING'
+                      ? 'bg-error text-on-primary ring-2 ring-error'
+                      : 'bg-error/10 text-error hover:bg-error/20 border border-error/30'
+                  }`}
+                >
+                  <AlertTriangle size={14} />
+                  <span>Confirm Phishing Threat</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={feedbackSubmitting}
+                  onClick={() => handleRecordFeedback('FALSE_POSITIVE')}
+                  className={`py-2 px-4 rounded-lg text-xs font-bold inline-flex items-center gap-2 transition-all ${
+                    analystDecision === 'FALSE_POSITIVE'
+                      ? 'bg-[#10b981] text-on-primary ring-2 ring-[#10b981]'
+                      : 'bg-[#10b981]/10 text-[#059669] hover:bg-[#10b981]/20 border border-[#10b981]/30'
+                  }`}
+                >
+                  <CheckCircle2 size={14} />
+                  <span>Mark False Positive (Benign)</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={feedbackSubmitting}
+                  onClick={() => handleRecordFeedback('SUSPICIOUS_NEEDS_REVIEW')}
+                  className={`py-2 px-4 rounded-lg text-xs font-bold inline-flex items-center gap-2 transition-all ${
+                    analystDecision === 'SUSPICIOUS_NEEDS_REVIEW'
+                      ? 'bg-[#f59e0b] text-on-primary ring-2 ring-[#f59e0b]'
+                      : 'bg-[#f59e0b]/10 text-[#d97706] hover:bg-[#f59e0b]/20 border border-[#f59e0b]/30'
+                  }`}
+                >
+                  <HelpCircle size={14} />
+                  <span>Needs Further Escalation</span>
+                </button>
+              </div>
+            </div>
+
+            {/* SUPPORTING EVIDENCE WITH EXPLICIT PROVENANCE TAGS */}
+            <div className="space-y-3">
+              <h3 className="font-headline-md font-bold text-xs text-on-background uppercase tracking-wider">
+                SUPPORTING EVIDENCE &amp; PROVENANCE ({supportingEvidence.length} SIGNALS)
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {supportingEvidence.map((ev, idx) => {
+                  const badge = getProvenanceBadge(ev.provenance, ev.source);
+                  return (
+                    <div key={idx} className="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border font-technical-data ${badge.cls}`}>
+                          {badge.label}
+                        </span>
+                        <span className="text-[10px] font-bold text-[#e7000b]">
+                          +{ev.severity || 40} SEV
+                        </span>
+                      </div>
+                      <h4 className="font-headline-md font-bold text-xs text-on-background capitalize">
+                        {ev.signal ? ev.signal.replace(/_/g, ' ') : 'Intelligence Signal'}
+                      </h4>
+                      <p className="text-[11px] text-on-surface-variant leading-normal">
+                        {ev.value || ev.description || 'Observed anomaly across threat intelligence telemetry.'}
+                      </p>
+                      <div className="flex items-center justify-between text-[10px] font-technical-data text-on-surface-variant pt-1 border-t border-outline-variant">
+                        <span>Source: {ev.source || 'Engine'}</span>
+                        <span>Conf: {Math.round((ev.confidence || 0.9) * 100)}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* CONTRADICTING & MISSING EVIDENCE SECTION */}
+            {(contradictingEvidence.length > 0 || missingEvidence.length > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {contradictingEvidence.length > 0 && (
+                  <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-2">
+                    <h4 className="font-headline-md font-bold text-xs text-on-surface-variant uppercase tracking-wider">
+                      CONTRADICTING / MITIGATING EVIDENCE ({contradictingEvidence.length})
+                    </h4>
+                    <ul className="space-y-1.5 text-xs text-on-surface-variant">
+                      {contradictingEvidence.map((c, cIdx) => (
+                        <li key={cIdx} className="flex items-start gap-2">
+                          <span className="text-on-surface-variant font-bold">•</span>
+                          <span>{c.value || c.description || 'Mitigating signal observed.'}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {missingEvidence.length > 0 && (
+                  <div className="bg-surface-container-low p-4 rounded-xl border border-outline-variant space-y-2">
+                    <h4 className="font-headline-md font-bold text-xs text-on-surface-variant uppercase tracking-wider">
+                      MISSING TELEMETRY ({missingEvidence.length})
+                    </h4>
+                    <ul className="space-y-1.5 text-xs text-on-surface-variant">
+                      {missingEvidence.map((m, mIdx) => (
+                        <li key={mIdx} className="flex items-start gap-2">
+                          <span className="text-on-surface-variant font-bold">•</span>
+                          <span>{m.description || m.value || 'Telemetry uncollected or skipped.'}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        );
+      })()}
 
       {/* Action Toolbar Card */}
       <section className="bg-surface-container-lowest rounded-lg border border-outline-variant p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">

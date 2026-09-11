@@ -118,6 +118,7 @@ def _parse_rdap_payload(domain: str, raw: Dict[str, Any]) -> Dict[str, Any]:
         if ldh:
             nameservers.append(ldh)
 
+    now_iso = datetime.now(timezone.utc).isoformat()
     return {
         "status": "RDAP_SUCCESS",
         "domain": domain,
@@ -127,11 +128,19 @@ def _parse_rdap_payload(domain: str, raw: Dict[str, Any]) -> Dict[str, Any]:
         "expiration_date": expiration_date or "Unknown",
         "status_flags": status_flags,
         "nameservers": nameservers,
-        "raw_rdap": raw
+        "raw_rdap": raw,
+        "provenance": {
+            "source": "rdap",
+            "status": "RDAP_SUCCESS",
+            "live": True,
+            "retrieved_at": now_iso
+        }
     }
 
 
 def _build_fallback_rdap(domain: str, status_msg: str) -> Dict[str, Any]:
+    now_iso = datetime.now(timezone.utc).isoformat()
+    is_live = status_msg != "RDAP_UNAVAILABLE"
     return {
         "status": status_msg,
         "domain": domain,
@@ -141,5 +150,12 @@ def _build_fallback_rdap(domain: str, status_msg: str) -> Dict[str, Any]:
         "expiration_date": "Unavailable",
         "status_flags": [],
         "nameservers": [],
-        "raw_rdap": {}
+        "raw_rdap": {},
+        "provenance": {
+            "source": "rdap",
+            "status": status_msg,
+            "live": is_live,
+            "retrieved_at": now_iso,
+            "reason": f"External RDAP resolution returned {status_msg}"
+        }
     }

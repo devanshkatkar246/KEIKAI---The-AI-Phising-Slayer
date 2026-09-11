@@ -38,7 +38,8 @@ from schemas import (
     AbuseResponsePreviewRequest, AbuseApprovalRequest, AbuseSubmitRequest, AbuseRevokeRequest,
     UniversalRoutePreviewRequest, UniversalTakedownSubmitRequest, EvidenceIntelligenceAnalyzeRequest,
     EmailAnalysisRequest, SenderBehaviorAnalysisRequest, UnifiedPhishingDecisionRequest,
-    NormalizedMessageRequest, AnalystOverrideRequest, UrlIntelligenceRequest
+    NormalizedMessageRequest, AnalystOverrideRequest, UrlIntelligenceRequest,
+    AttackChainRequest, AttackChainResponse
 )
 from utils.temp_file import save_temp_file, save_temp_files
 from services.dnstwist_service import run_dnstwist_scan, DNSTwistError
@@ -426,15 +427,17 @@ async def message_override_endpoint(message_id: str, payload: AnalystOverrideReq
 @app.post("/api/url-intelligence", response_model=StandardResponse)
 async def url_intelligence_endpoint(payload: UrlIntelligenceRequest):
     """
-    PHASE 7 — ADVANCED URL, DOMAIN AND REDIRECT INTELLIGENCE API.
-    Performs URL canonicalization, obfuscation analysis, SSRF-safe redirect inspection,
-    static credential landing page detection, domain age tracking (RDAP), and threat feed correlation.
+    PHASE 5 — COMPLETE URL, DOMAIN AND REDIRECT INTELLIGENCE API (PS #2).
+    Performs URL normalization, obfuscation analysis, SSRF-safe redirect inspection,
+    static credential landing page detection, domain age tracking (RDAP), lookalike analysis, and threat feed correlation.
     """
     from services.url_intelligence import analyze_url_intelligence
     try:
         res = analyze_url_intelligence(
             url=payload.url,
             html_content=payload.html_content,
+            official_domain=payload.official_domain,
+            brand=payload.brand,
             quick_mode=payload.quick_mode if payload.quick_mode is not None else True
         )
         return {
@@ -1419,35 +1422,52 @@ async def get_visual_phishing_image(filename: str):
 async def link_infrastructure(payload: LinkInfrastructureRequest):
     """
     Surfaces other scanned assets sharing technical fingerprints (hosting IP, image hash, target brand)
-    with the given evidence items.
+    with the given evidence items. Scoped by investigation_id and organisation_id to prevent cross-investigation leakage.
     """
     try:
         results = find_linked_infrastructure(
             evidence_domains=payload.evidence_domains or [],
             evidence_logos=payload.evidence_logos or [],
-            evidence_visual_phishing=payload.evidence_visual_phishing or []
+            evidence_visual_phishing=payload.evidence_visual_phishing or [],
+            investigation_id=payload.investigation_id,
+            organisation_id=payload.organisation_id
         )
         return {
             "status": "success",
             "data": results,
-            "meta": {"source_tool": "infrastructure_fingerprinting"}
+            "meta": {"source_tool": "infrastructure_fingerprinting", "investigation_id": payload.investigation_id}
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to query linked infrastructure: {str(e)}")
 
 
 @app.get("/api/offender-clusters", response_model=StandardResponse)
-async def offender_clusters(brand: Optional[str] = Query(None), case_id: Optional[str] = Query(None)):
+async def offender_clusters(
+    brand: Optional[str] = Query(None),
+    case_id: Optional[str] = Query(None),
+    investigation_id: Optional[str] = Query(None),
+    organisation_id: Optional[str] = Query(None)
+):
     """
-    Returns all detected offender clusters across the database with confidence scores,
-    signal tags, and network graph node/edge definitions. Supports filtering by brand or case_id.
+    Returns detected offender clusters with confidence scores, signal tags, and network graph definitions.
+    Supports brand, case_id, investigation_id, and organisation_id filtering to isolate active case clusters.
     """
     try:
-        clusters = get_offender_clusters(brand=brand, case_id=case_id)
+        clusters = get_offender_clusters(
+            brand=brand,
+            case_id=case_id,
+            investigation_id=investigation_id,
+            organisation_id=organisation_id
+        )
         return {
             "status": "success",
             "data": clusters,
-            "meta": {"source_tool": "infrastructure_fingerprinting", "filter_brand": brand, "filter_case_id": case_id}
+            "meta": {
+                "source_tool": "infrastructure_fingerprinting",
+                "filter_brand": brand,
+                "filter_case_id": case_id,
+                "filter_investigation_id": investigation_id
+            }
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to compute offender clusters: {str(e)}")
@@ -2075,3 +2095,123 @@ async def get_feedback_statistics_endpoint():
     except Exception as e:
         logger.error(f"Failed to fetch feedback statistics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch feedback statistics: {str(e)}")
+
+
+from schemas import PageAnalysisRequest
+from services.page_analyzer import analyze_landing_page
+
+
+@app.post("/api/page-analysis", response_model=StandardResponse)
+async def analyze_page_endpoint(payload: PageAnalysisRequest):
+    """
+    PHASE 6 — COMPLETE PAGE SIMILARITY & BRAND CLONE DETECTION API.
+    Parses landing page static HTML via BeautifulSoup, computes DOM structural fingerprints,
+    analyzes brand text and asset presence, evaluates form action security, checks domain alignment,
+    computes actual perceptual hash visual similarity, and outputs multi-signal clone classification.
+    """
+    try:
+        results = analyze_landing_page(
+            url=payload.url,
+            html_content=payload.html_content,
+            target_brand=payload.brand,
+            official_domain=payload.official_domain
+        )
+        return {
+            "status": "success",
+            "data": results,
+            "meta": {"source_tool": "page_similarity_clone_engine"}
+        }
+    except Exception as e:
+        logger.error(f"[KEIKAI API] Page analysis error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to execute page analysis: {str(e)}")
+
+
+from schemas import EntityIntelligenceRequest, AttackChainRequest
+from services.entity_intelligence import get_domain_entity_profile
+from services.chain_tracer import trace_attack_chain
+
+
+@app.post("/api/entity-intelligence", response_model=StandardResponse)
+async def get_entity_intelligence_endpoint(payload: EntityIntelligenceRequest):
+    """
+    PHASE 8 — WHOIS/RDAP ENTITY BACKGROUND INTELLIGENCE API.
+    Retrieves registrar metadata, creation/expiration dates, domain age classification,
+    privacy protection status (PRIVACY_PROTECTED disclosure), nameservers, abuse contacts,
+    infrastructure correlation, and entity risk scoring.
+    """
+    try:
+        profile = get_domain_entity_profile(
+            domain=payload.domain,
+            investigation_id=payload.investigation_id,
+            use_cache=payload.use_cache if payload.use_cache is not None else True
+        )
+        return {
+            "status": "success",
+            "data": profile,
+            "meta": {"source_tool": "entity_intelligence_engine"}
+        }
+    except Exception as e:
+        logger.error(f"[KEIKAI API] Entity intelligence error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch entity intelligence: {str(e)}")
+
+
+@app.post("/api/attack-chain", response_model=StandardResponse)
+async def trace_attack_chain_endpoint(payload: AttackChainRequest):
+    """
+    PHASE 8 — ATTACK CHAIN TRACER & INFRASTRUCTURE CORRELATION API.
+    Traces attack journey from message arrival to final credential destination:
+    EMAIL -> SENDER -> URL -> REDIRECT -> DOMAIN -> IP -> NAMESERVER -> LANDING_PAGE -> FORM_ACTION -> BRAND -> THREAT_FEED.
+    Produces evidence-backed nodes, directed edges, chain risk signals, and entity risk summaries.
+    """
+    try:
+        chain = trace_attack_chain(
+            investigation_id=payload.investigation_id,
+            target_url=payload.url,
+            email_bundle=payload.email_data,
+            page_analysis=payload.page_analysis
+        )
+        return {
+            "status": "success",
+            "data": chain,
+            "meta": {"source_tool": "attack_chain_tracer"}
+        }
+    except Exception as e:
+        logger.error(f"[KEIKAI API] Attack chain tracer error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to trace attack chain: {str(e)}")
+
+
+from schemas import InvestigationAnalysisRequest
+from services.phishing_decision_engine import analyze_investigation
+
+
+@app.post("/api/investigations/{investigation_id}/analyze", response_model=StandardResponse)
+async def analyze_investigation_endpoint(investigation_id: str, payload: Optional[InvestigationAnalysisRequest] = None):
+    """
+    PHASE 9 — END-TO-END UNIFIED INVESTIGATION ORCHESTRATION API.
+    Orchestrates the full multi-stage analysis journey:
+    MESSAGE -> CONTENT -> SENDER BEHAVIOUR -> PAYLOAD / QR -> URL -> LOOKALIKE -> DOMAIN -> WHOIS/RDAP -> DNS -> REDIRECT CHAIN -> LANDING PAGE -> BEAUTIFULSOUP -> CREDENTIAL FORM -> VISUAL SIMILARITY -> BRAND CLONE -> INFRASTRUCTURE -> ATTACK CHAIN -> EVIDENCE CORRELATION -> AI REASONING -> UNIFIED VERDICT.
+    Reuses existing stage results to prevent redundant calls and executes strict 1-pass AI reasoning cache.
+    """
+    inv_id = (payload.investigation_id if payload else None) or investigation_id
+    org_id = (payload.organisation_id if payload else None) or "org_acme_01"
+    url = payload.url if payload else None
+    email_data = payload.email_data if payload else None
+
+    try:
+        verdict_res = analyze_investigation(
+            investigation_id=inv_id,
+            organisation_id=org_id,
+            target_url=url,
+            email_bundle=email_data
+        )
+        return {
+            "status": "success",
+            "data": verdict_res,
+            "meta": {"source_tool": "unified_investigation_orchestrator"}
+        }
+    except Exception as e:
+        logger.error(f"[KEIKAI API] Investigation orchestration error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to analyze investigation: {str(e)}")
+
+
+
