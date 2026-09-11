@@ -3,6 +3,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import Toast from './components/Toast';
 import Footer from './components/Footer';
 import OnboardingPage from './components/OnboardingPage';
+import HomePage from './components/HomePage';
 import EmailThreatInboxTab from './components/EmailThreatInboxTab';
 import DomainWatchTab from './components/DomainWatchTab';
 import LogoMatchTab from './components/LogoMatchTab';
@@ -38,7 +39,7 @@ function Dashboard() {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
-  const [activeTab, setActiveTab] = useState('inbox');
+  const [activeTab, setActiveTab] = useState('home');
   const [toasts, setToasts] = useState([]);
   const [apiOnline, setApiOnline] = useState(true);
   
@@ -647,15 +648,29 @@ function Dashboard() {
               {/* Clickable Brand Home Button */}
               <button
                 type="button"
-                onClick={() => setActiveTab('inbox')}
+                onClick={() => setActiveTab('home')}
                 className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer text-left shrink-0"
-                title="Return to Threat Inbox"
+                title="Return to Security Command Center"
               >
                 <span className="material-symbols-outlined text-primary text-[28px] fill-icon">shield</span>
                 <span className="font-headline-md text-[20px] font-bold text-primary tracking-tight">KEKAI</span>
               </button>
 
               <div className="hidden md:flex items-center gap-1.5 lg:gap-3 h-[64px] min-w-0 overflow-x-auto no-scrollbar">
+                {/* 0. Home Command Center */}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('home')}
+                  className={`h-full flex items-center gap-1.5 px-2.5 text-xs lg:text-sm font-medium transition-all whitespace-nowrap ${
+                    activeTab === 'home'
+                      ? 'text-primary border-b-2 border-primary font-bold'
+                      : 'text-on-surface-variant hover:text-primary'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">home</span>
+                  <span>Home</span>
+                </button>
+
                 {/* 1. Threat Inbox (AI Email Threat Analysis) */}
                 <button
                   type="button"
@@ -756,7 +771,7 @@ function Dashboard() {
                 type="button"
                 onClick={() => {
                   setInvestigationState((prev) => ({ ...prev, isInitialized: false }));
-                  setActiveTab('home');
+                  setActiveTab('inbox');
                 }}
                 className="btn-secondary text-xs font-semibold py-1.5 px-3 rounded-full flex items-center gap-1.5 whitespace-nowrap"
                 title="Start a new investigation"
@@ -883,9 +898,16 @@ function Dashboard() {
           )}
 
           {activeTab === 'home' && (
-            <OnboardingPage
-              onStartInvestigation={handleStartInvestigation}
-              addToast={addToast}
+            <HomePage
+              onNavigateTab={setActiveTab}
+              onStartDemo={handleRunFullDemoScenario}
+              onStartNewInvestigation={() => {
+                setInvestigationState((prev) => ({ ...prev, isInitialized: false }));
+                setActiveTab('inbox');
+              }}
+              apiOnline={apiOnline}
+              investigationContext={investigationContext}
+              investigationResult={investigationResult}
             />
           )}
 
