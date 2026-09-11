@@ -9,7 +9,7 @@
  * 5. Data Adapter: Normalizes backend snake_case / camelCase schemas and ensures optional fields never crash UI.
  */
 
-import { apiFetch, API_BASE_URL } from '../api.js';
+import { apiFetch, safeParseJson, API_BASE_URL } from '../api.js';
 
 // In-flight request registry for deduplication
 const inFlightRequests = new Map();
@@ -331,11 +331,11 @@ export async function analyzeInvestigation({
         throw new Error('Stale investigation request aborted');
       }
 
-      const resJson = await response.json();
+      const resJson = await safeParseJson(response);
       if (resJson.status === 'success' && resJson.data) {
         return normalizeInvestigationResult(resJson);
       } else {
-        throw new Error(resJson.error || 'Failed to complete security investigation analysis');
+        throw new Error(resJson.error || resJson.detail || 'Failed to complete security investigation analysis');
       }
     } finally {
       inFlightRequests.delete(reqKey);

@@ -52,6 +52,45 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * Throws an Error with .isNetworkError = true when all attempts are exhausted
  * and the backend was never reached.
  */
+/**
+ * Safely parses JSON response with content check, HTTP status check,
+ * and meaningful error messages if body is empty or non-JSON.
+ */
+export async function safeParseJson(response) {
+  if (!response) {
+    throw new Error('No HTTP response received from server.');
+  }
+
+  const text = await response.text();
+
+  if (!text || text.trim().length === 0) {
+    if (!response.ok) {
+      throw new Error(`Server returned HTTP ${response.status} ${response.statusText || ''} (empty body)`);
+    }
+    return {};
+  }
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (err) {
+    if (!response.ok) {
+      throw new Error(`Server returned HTTP ${response.status}: ${text.slice(0, 150)}`);
+    }
+    throw new Error(`Invalid JSON response from server: ${text.slice(0, 150)}`);
+  }
+
+  if (!response.ok) {
+    const errorMsg = data.detail || data.error || data.message || `Server error (${response.status})`;
+    const errorObj = new Error(errorMsg);
+    errorObj.status = response.status;
+    errorObj.data = data;
+    throw errorObj;
+  }
+
+  return data;
+}
+
 export async function apiFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   let lastErr;
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
@@ -71,3 +110,4 @@ export async function apiFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS
   }
   throw lastErr;
 }
+

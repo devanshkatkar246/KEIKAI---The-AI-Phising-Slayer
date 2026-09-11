@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mail, AlertTriangle, ArrowRight, FileText, Search, ShieldAlert, Sparkles, CheckCircle, ExternalLink, RefreshCw, ShieldCheck, Loader2, Info, UserCheck, ShieldX, UserX, Clock, Building2, Upload, QrCode, Paperclip, FileCode, CheckCircle2 } from 'lucide-react';
-import { apiFetch } from '../api';
+import { apiFetch, safeParseJson } from '../api';
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -116,7 +116,7 @@ const EmailThreatInboxTab = ({
         body: formData
       });
 
-      const data = await res.json();
+      const data = await safeParseJson(res);
       if (data.status === 'success' && data.data) {
         setPayloadResult(data.data);
         addToast('Payload Inspected', `Safely analyzed ${file.name} (SHA256: ${data.data.sha256.slice(0, 12)}...)`, 'success');
@@ -184,7 +184,7 @@ const EmailThreatInboxTab = ({
         })
       });
 
-      const data = await res.json();
+      const data = await safeParseJson(res);
       if (data.status === 'success' && data.data) {
         const payload = data.data;
         const cleanUrl = sanitizeCanonicalUrl(payload.extracted_url || payload.investigation_target?.url);
