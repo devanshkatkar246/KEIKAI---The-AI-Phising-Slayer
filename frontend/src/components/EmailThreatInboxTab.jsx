@@ -79,7 +79,10 @@ const EmailThreatInboxTab = ({
   addToast,
   setBrandName,
   investigationContext,
-  setInvestigationContext
+  setInvestigationContext,
+  investigationResult,
+  handleRunInvestigation,
+  isAnalyzing
 }) => {
   const [selectedSample, setSelectedSample] = useState(SAMPLE_EMAILS[0]);
   const [customSubject, setCustomSubject] = useState('');
