@@ -16,6 +16,7 @@ import AbuseControlSection from './components/AbuseControlSection';
 import WorkflowAutomationTab from './components/WorkflowAutomationTab';
 import DemoControllerBar from './components/DemoControllerBar';
 import DemoScenarioModal from './components/DemoScenarioModal';
+import InvestigationWorkspace from './components/InvestigationWorkspace';
 import { apiFetch } from './api';
 import { analyzeInvestigation, normalizeInvestigationResult } from './services/investigationService';
 import { ShieldAlert, Image as ImageIcon, FileCheck, Eye, Activity, Shield, Network, ShoppingBag, Share2, WifiOff, Plus } from 'lucide-react';
@@ -656,90 +657,35 @@ function Dashboard() {
                 <span className="font-headline-md text-[20px] font-bold text-primary tracking-tight">KEKAI</span>
               </button>
 
-              <div className="hidden md:flex items-center gap-1.5 lg:gap-3 h-[64px] min-w-0 overflow-x-auto no-scrollbar">
-                {/* 0. Home Command Center */}
+              <div className="hidden md:flex items-center gap-2 lg:gap-4 h-[64px] min-w-0">
+                {/* Home Button */}
                 <button
                   type="button"
                   onClick={() => setActiveTab('home')}
-                  className={`h-full flex items-center gap-1.5 px-2.5 text-xs lg:text-sm font-medium transition-all whitespace-nowrap ${
+                  className={`h-full flex items-center gap-1.5 px-3 text-xs lg:text-sm font-medium transition-all whitespace-nowrap ${
                     activeTab === 'home'
-                      ? 'text-primary border-b-2 border-primary font-bold'
-                      : 'text-on-surface-variant hover:text-primary'
+                      ? 'text-[var(--color-ink)] border-b-2 border-[var(--color-ink)] font-semibold'
+                      : 'text-[var(--color-slate-gray)] hover:text-[var(--color-ink)]'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">home</span>
                   <span>Home</span>
                 </button>
 
-                {/* 1. Threat Inbox (AI Email Threat Analysis) */}
+                {/* Investigation Workspace Button */}
                 <button
                   type="button"
-                  onClick={() => setActiveTab('inbox')}
-                  className={`h-full flex items-center gap-1.5 px-2.5 text-xs lg:text-sm font-medium transition-all whitespace-nowrap ${
-                    activeTab === 'inbox'
-                      ? 'text-primary border-b-2 border-primary font-bold'
-                      : 'text-on-surface-variant hover:text-primary'
+                  onClick={() => setActiveTab('workspace')}
+                  className={`h-full flex items-center gap-1.5 px-3 text-xs lg:text-sm font-medium transition-all whitespace-nowrap ${
+                    activeTab !== 'home'
+                      ? 'text-[var(--color-ink)] border-b-2 border-[var(--color-ink)] font-semibold'
+                      : 'text-[var(--color-slate-gray)] hover:text-[var(--color-ink)]'
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[18px]">inbox</span>
-                  <span>Threat Inbox</span>
+                  <span className="material-symbols-outlined text-[18px]">security</span>
+                  <span>Investigation Workspace</span>
                 </button>
-
-                {/* 2. Threat Intelligence (Multi-source Threat Intelligence) */}
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('domain')}
-                  className={`h-full flex items-center gap-1.5 px-2.5 text-xs lg:text-sm font-medium transition-all whitespace-nowrap ${
-                    activeTab === 'domain'
-                      ? 'text-primary border-b-2 border-primary font-bold'
-                      : 'text-on-surface-variant hover:text-primary'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">travel_explore</span>
-                  <span>Threat Intelligence</span>
-                </button>
-
-                {/* 3. Visual Analysis (Visual Phishing / Logo Model) */}
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('phishing')}
-                  className={`h-full flex items-center gap-1.5 px-2.5 text-xs lg:text-sm font-medium transition-all whitespace-nowrap ${
-                    activeTab === 'phishing'
-                      ? 'text-primary border-b-2 border-primary font-bold'
-                      : 'text-on-surface-variant hover:text-primary'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">visibility</span>
-                  <span>Visual Analysis</span>
-                </button>
-
-                {/* 4. Infrastructure Graph (Connected Infrastructure & Threat Clusters) */}
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('infrastructure')}
-                  className={`h-full flex items-center gap-1.5 px-2.5 text-xs lg:text-sm font-medium transition-all whitespace-nowrap ${
-                    activeTab === 'infrastructure'
-                      ? 'text-primary border-b-2 border-primary font-bold'
-                      : 'text-on-surface-variant hover:text-primary'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">hub</span>
-                  <span>Infrastructure</span>
-                </button>
-
-                {/* 5. Verdict & Case Report (Explainable Verdict) */}
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('case')}
-                  className={`h-full flex items-center gap-1.5 px-2.5 text-xs lg:text-sm font-medium transition-all whitespace-nowrap relative ${
-                    activeTab === 'case'
-                      ? 'text-primary border-b-2 border-primary font-bold'
-                      : 'text-on-surface-variant hover:text-primary'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">fact_check</span>
-                  <span>Verdict ({selectedDomains.length + selectedLogos.length + selectedVisualPhishing.length})</span>
-                </button>
+              </div>
 
                 {/* Supporting Modules Select Dropdown */}
                 <div className="relative group flex items-center h-full">
@@ -763,7 +709,6 @@ function Dashboard() {
                   </select>
                 </div>
               </div>
-            </div>
 
             <div className="flex items-center gap-2.5 shrink-0">
               {/* New Investigation Button in Navbar */}
@@ -829,212 +774,40 @@ function Dashboard() {
           </div>
         )}
 
-        {/* Investigation Context Banner Bar & Progressive Stepper */}
-        {activeTab !== 'home' && (
-        <div className="bg-surface-container-lowest border-b border-outline-variant px-4 sm:px-6 lg:px-8 py-2.5">
-          <div className="max-w-[1440px] mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full md:w-auto">
-              <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold ${
-                activeTab === 'inbox' ? 'bg-primary text-on-primary border-primary' : (investigationContext ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-container text-on-surface-variant border-outline-variant')
-              }`}>
-                <span>STAGE 1: Email Threat</span>
-              </div>
-              <span className="text-outline-variant">→</span>
-
-              <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold ${
-                activeTab === 'domain' ? 'bg-primary text-on-primary border-primary' : (investigationContext?.domain_stage_complete ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-container text-on-surface-variant border-outline-variant')
-              }`}>
-                <span>STAGE 2: Threat Intel</span>
-              </div>
-              <span className="text-outline-variant">→</span>
-
-              <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold ${
-                activeTab === 'phishing' ? 'bg-primary text-on-primary border-primary' : (investigationContext?.visual_stage_complete ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-container text-on-surface-variant border-outline-variant')
-              }`}>
-                <span>STAGE 3: Visual Analysis</span>
-              </div>
-              <span className="text-outline-variant">→</span>
-
-              <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold ${
-                activeTab === 'infrastructure' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container text-on-surface-variant border-outline-variant'
-              }`}>
-                <span>STAGE 4: Infrastructure</span>
-              </div>
-              <span className="text-outline-variant">→</span>
-
-              <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold ${
-                activeTab === 'case' ? 'bg-primary text-on-primary border-primary' : (selectedDomains.length > 0 ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-container text-on-surface-variant border-outline-variant')
-              }`}>
-                <span>STAGE 5: Threat Verdict</span>
-              </div>
-            </div>
-
-            {investigationContext?.domain && (
-              <div className="flex items-center gap-3 text-xs font-technical-data shrink-0">
-                <span className="text-on-surface-variant">TARGET DOMAIN: <strong className="text-primary">{investigationContext.domain}</strong></span>
-                {investigationContext.sender && (
-                  <span className="hidden lg:inline text-on-surface-variant">SENDER: <strong className="text-on-background">{investigationContext.sender}</strong></span>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-        )}
-
-        {/* Main Canvas Workspace Container */}
         <main className="max-w-[1440px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
-          {activeTab === 'inbox' && (
-            <EmailThreatInboxTab
-              onNavigateTab={setActiveTab}
-              setDomainScanState={setDomainScanState}
-              addToast={addToast}
-              setBrandName={setBrandName}
-              investigationContext={investigationContext}
-              setInvestigationContext={setInvestigationContext}
-              investigationResult={investigationResult}
-              handleRunInvestigation={handleRunInvestigation}
-              isAnalyzing={isAnalyzing}
-            />
-          )}
-
-          {activeTab === 'home' && (
+          {activeTab === 'home' ? (
             <HomePage
               onNavigateTab={setActiveTab}
               onStartDemo={handleRunFullDemoScenario}
               onStartNewInvestigation={() => {
                 setInvestigationState((prev) => ({ ...prev, isInitialized: false }));
-                setActiveTab('inbox');
+                setActiveTab('workspace');
               }}
               apiOnline={apiOnline}
               investigationContext={investigationContext}
               investigationResult={investigationResult}
             />
-          )}
-
-          {activeTab === 'domain' && (
-            <DomainWatchTab
-              apiBaseUrl={API_BASE_URL}
-              addToast={addToast}
-              selectedDomains={selectedDomains}
-              toggleSelectDomain={toggleSelectDomain}
-              domainScanState={domainScanState}
-              setDomainScanState={setDomainScanState}
-              investigationState={investigationState}
-              onNavigateTab={setActiveTab}
-              investigationContext={investigationContext}
-              setInvestigationContext={setInvestigationContext}
+          ) : (
+            <InvestigationWorkspace
               investigationResult={investigationResult}
+              investigationContext={investigationContext}
               handleRunInvestigation={handleRunInvestigation}
-            />
-          )}
-
-          {activeTab === 'logo' && (
-            <LogoMatchTab
-              apiBaseUrl={API_BASE_URL}
+              isAnalyzing={isAnalyzing}
               addToast={addToast}
-              selectedLogos={selectedLogos}
-              toggleSelectLogo={toggleSelectLogo}
-              logoMatchState={logoMatchState}
-              setLogoMatchState={setLogoMatchState}
-              investigationState={investigationState}
-              setInvestigationState={setInvestigationState}
-              onInvestigateCandidate={(item) => {
-                setDomainScanState((prev) => ({ ...prev, selectedCandidateDetail: item }));
-                setActiveTab('domain');
+              onRunDemo={handleRunFullDemoScenario}
+              onResetSession={() => {
+                setInvestigationState((prev) => ({ ...prev, isInitialized: false }));
+                setInvestigationResult(null);
+                setInvestigationContext(null);
+                try {
+                  localStorage.removeItem('keikai_investigation_result');
+                  localStorage.removeItem('keikai_investigation_context');
+                } catch {}
               }}
             />
           )}
 
-          {activeTab === 'phishing' && (
-            <VisualPhishingTab
-              apiBaseUrl={API_BASE_URL}
-              addToast={addToast}
-              selectedVisualPhishing={selectedVisualPhishing}
-              toggleSelectVisualPhishing={toggleSelectVisualPhishing}
-              investigationContext={investigationContext}
-              setInvestigationContext={setInvestigationContext}
-              onNavigateTab={setActiveTab}
-              investigationResult={investigationResult}
-              handleRunInvestigation={handleRunInvestigation}
-            />
-          )}
 
-          {activeTab === 'listings' && (
-            <MarketplaceListingsTab
-              apiBaseUrl={API_BASE_URL}
-              addToast={addToast}
-              selectedListings={selectedListings}
-              toggleSelectListing={toggleSelectListing}
-            />
-          )}
-
-          {activeTab === 'social' && (
-            <SocialWatchTab
-              apiBaseUrl={API_BASE_URL}
-              addToast={addToast}
-              selectedSocialProfiles={selectedSocialProfiles}
-              toggleSelectProfile={toggleSelectProfile}
-            />
-          )}
-
-          {activeTab === 'infrastructure' && (
-            <LinkedInfrastructureTab
-              apiBaseUrl={API_BASE_URL}
-              addToast={addToast}
-              selectedDomains={selectedDomains}
-              selectedLogos={selectedLogos}
-              selectedVisualPhishing={selectedVisualPhishing}
-              brandName={brandName}
-              handleAddClusterToCase={handleAddClusterToCase}
-              toggleSelectDomain={toggleSelectDomain}
-              investigationResult={investigationResult}
-            />
-          )}
-
-          {activeTab === 'case' && (
-            <CaseReportTab
-              apiBaseUrl={API_BASE_URL}
-              addToast={addToast}
-              selectedDomains={selectedDomains}
-              setSelectedDomains={setSelectedDomains}
-              selectedLogos={selectedLogos}
-              setSelectedLogos={setSelectedLogos}
-              selectedVisualPhishing={selectedVisualPhishing}
-              setSelectedVisualPhishing={setSelectedVisualPhishing}
-              selectedListings={selectedListings}
-              setSelectedListings={setSelectedListings}
-              selectedSocialProfiles={selectedSocialProfiles}
-              setSelectedSocialProfiles={setSelectedSocialProfiles}
-              brandName={brandName}
-              setBrandName={setBrandName}
-              notes={notes}
-              setNotes={setNotes}
-              handleClearCase={handleClearCase}
-              investigationContext={investigationContext}
-              onNavigateTab={setActiveTab}
-              investigationResult={investigationResult}
-              handleRunInvestigation={handleRunInvestigation}
-            />
-          )}
-
-          {activeTab === 'takedown' && (
-            <AbuseControlSection
-              apiBaseUrl={API_BASE_URL}
-              caseId={investigationState.investigationId || 'default'}
-              candidateDomain={selectedDomains[0]?.domain || 'amaz0n-security-login.xyz'}
-              targetBrand={brandName || 'Amazon'}
-              officialDomain={investigationState.officialDomain || 'amazon.com'}
-              addToast={addToast}
-            />
-          )}
-
-          {activeTab === 'workflows' && (
-            <WorkflowAutomationTab
-              apiBaseUrl={API_BASE_URL}
-              addToast={addToast}
-              onNavigateTab={setActiveTab}
-            />
-          )}
         </main>
 
         {/* DEMO SCENARIO OVERLAYS */}
