@@ -91,6 +91,27 @@ export async function safeParseJson(response) {
   return data;
 }
 
+/**
+ * Safely formats confidence metrics to clean percentage string e.g. "91%".
+ * Prevents 4000% formatting errors regardless of 0.91 vs 91 representation.
+ */
+export function formatConfidence(confidence) {
+  if (confidence == null || isNaN(confidence)) return '0%';
+  const num = Number(confidence);
+  const pct = num > 1.0 ? num : num * 100;
+  return `${Math.round(pct)}%`;
+}
+
+/**
+ * Safely formats risk score to 0-100 integer.
+ */
+export function formatRiskScore(riskScore) {
+  if (riskScore == null || isNaN(riskScore)) return 0;
+  const num = Number(riskScore);
+  const val = num <= 1.0 && num > 0 ? num * 100 : num;
+  return Math.min(100, Math.max(0, Math.round(val)));
+}
+
 export async function apiFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   let lastErr;
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
@@ -110,4 +131,5 @@ export async function apiFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS
   }
   throw lastErr;
 }
+
 

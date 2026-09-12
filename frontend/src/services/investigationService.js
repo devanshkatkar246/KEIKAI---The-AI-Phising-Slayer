@@ -25,11 +25,41 @@ export function normalizeInvestigationResult(raw) {
 
   const data = raw.data || raw;
 
-  // Extract core metrics
-  const riskScore = data.risk_score ?? data.metrics?.risk_score ?? 0;
-  const confidence = data.confidence ?? data.metrics?.confidence ?? 0;
-  const evidenceQuality = data.evidence_quality ?? data.metrics?.evidence_quality ?? 0;
-  const verdict = (data.verdict || 'INCONCLUSIVE').toUpperCase();
+  // Extract core metrics with canonical normalization
+  let rawRisk = data.risk_score ?? data.metrics?.risk_score ?? 0;
+  let riskScore = Math.min(100, Math.max(0, Math.round(rawRisk <= 1.0 && rawRisk > 0 ? rawRisk * 100 : rawRisk)));
+
+  let rawConf = data.confidence ?? data.metrics?.confidence ?? 0.85;
+  let confidence = rawConf > 1.0 ? rawConf / 100 : rawConf;
+
+  let rawQuality = data.evidence_quality ?? data.metrics?.evidence_quality ?? 85;
+  let evidenceQuality = typeof rawQuality === 'string' ? (rawQuality === 'HIGH' ? 85 : rawQuality === 'MEDIUM' ? 60 : 30) : rawQuality;
+
+  let rawVerdict = (data.verdict || 'INCONCLUSIVE').toUpperCase();
+  if (rawVerdict === 'MALICIOUS') rawVerdict = 'PHISHING';
+
+  // Prevent verdict contradiction: high risk score must never render as BENIGN
+  let verdict = rawVerdict;
+  if (riskScore >= 70 && (verdict === 'BENIGN' || verdict === 'LOW')) {
+    verdict = 'PHISHING';
+  } else if (riskScore >= 40 && (verdict === 'BENIGN' || verdict === 'LOW')) {
+    verdict = 'SUSPICIOUS';
+  }
+
+  // Extract canonical URLs and domains
+  const extractedUrl = data.extracted_url || data.url || data.target_url || data.indicators?.urls?.[0] || data.investigation_target?.url || '';
+  let extractedDomain = data.extracted_domain || data.domain || data.indicators?.domains?.[0] || data.investigation_target?.domain || '';
+  if (!extractedDomain && extractedUrl) {
+    try {
+      extractedDomain = new URL(extractedUrl.startsWith('http') ? extractedUrl : `https://${extractedUrl}`).hostname;
+    } catch (_) {
+      extractedDomain = extractedUrl.replace(/^https?:\/\//i, '').split('/')[0].split('?')[0];
+    }
+  }
+  // Filter out any accidentally extracted email address from domain field
+  if (extractedDomain.includes('@')) {
+    extractedDomain = extractedDomain.split('@').pop();
+  }
 
   // Extract hypotheses
   const primaryHypothesis = data.primary_hypothesis || data.attack_hypothesis || 'CREDENTIAL_HARVESTING';

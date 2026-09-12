@@ -350,11 +350,13 @@ def inspect_zip_attachment(content_bytes: bytes, filename: str) -> Dict[str, Any
 def inspect_attachment_payload(
     file_bytes: bytes,
     filename: str,
-    mime_type: Optional[str] = None
+    mime_type: Optional[str] = None,
+    content_type: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Main entry point for Safe Static Attachment Inspection.
     """
+    effective_mime = content_type or mime_type or "application/octet-stream"
     if len(file_bytes) > MAX_ATTACHMENT_SIZE_BYTES:
         return {
             "filename": filename,

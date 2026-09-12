@@ -52,22 +52,22 @@ const DomainWatchTab = ({
   } = domainScanState || {};
 
   // Extract active investigation domain details
-  const activeDomain = investigationResult?.domainEvidence?.domain || investigationContext?.domain || '';
+  const activeDomain = investigationResult?.extractedDomain || investigationResult?.domain || investigationResult?.domainEvidence?.domain || investigationContext?.domain || '';
   const activeSender = investigationResult?.emailEvidence?.sender || investigationContext?.sender || '';
-  const activeUrl = investigationResult?.urlEvidence?.finalUrl || investigationContext?.url || (activeDomain ? `https://${activeDomain}/login` : '');
+  const activeUrl = investigationResult?.extractedUrl || investigationResult?.urlEvidence?.finalUrl || investigationContext?.url || (activeDomain ? `https://${activeDomain}/login` : '');
   const activeRisk = investigationResult?.riskScore || investigationContext?.domain_risk || 85;
   const activeConfidence = investigationResult?.confidence || 91;
   const activeQuality = investigationResult?.evidenceQuality || 96;
 
-  // Auto-fill domain from active investigation if empty
+  // Auto-fill domain from active investigation if empty or updated
   useEffect(() => {
-    if (activeDomain && !domainInput) {
+    if (activeDomain && (!domainInput || domainInput !== activeDomain)) {
       setDomainScanState?.((prev) => ({
         ...prev,
         domainInput: activeDomain
       }));
     }
-  }, [activeDomain, domainInput, setDomainScanState]);
+  }, [activeDomain, setDomainScanState]);
 
   const [loading, setLoading] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);

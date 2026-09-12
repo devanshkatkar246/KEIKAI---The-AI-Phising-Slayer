@@ -27,6 +27,8 @@ import {
   Server
 } from 'lucide-react';
 
+import { formatConfidence, formatRiskScore } from '../api';
+
 import EmailThreatInboxTab from './EmailThreatInboxTab';
 import DomainWatchTab from './DomainWatchTab';
 import VisualPhishingTab from './VisualPhishingTab';
@@ -181,8 +183,7 @@ export default function InvestigationWorkspace({
             <div className="surface-elevated rounded-2xl p-4 min-w-[130px] text-center space-y-1">
               <p className="text-[10px] uppercase font-mono tracking-widest text-[var(--color-slate-gray)]">Confidence</p>
               <div className="flex items-baseline justify-center gap-1">
-                <span className="font-serif text-3xl font-normal text-[var(--color-ink)]">{confidence}</span>
-                <span className="text-xs text-[var(--color-slate-gray)] font-mono">%</span>
+                <span className="font-serif text-3xl font-normal text-[var(--color-ink)]">{formatConfidence(confidence)}</span>
               </div>
             </div>
 

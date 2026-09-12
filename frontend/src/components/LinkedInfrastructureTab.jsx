@@ -498,7 +498,7 @@ const LinkedInfrastructureTab = ({
             </p>
           </div>
 
-          {!perCaseData || perCaseData.linked_assets.length === 0 ? (
+          {!perCaseData || !(perCaseData.linked_assets?.length) ? (
             <div className="p-12 text-center text-xs text-on-surface-variant space-y-2">
               <span className="material-symbols-outlined text-outline text-[32px]">hub</span>
               <p className="font-headline-md font-semibold text-on-background">No Related Assets Found for Current Case</p>
@@ -517,7 +517,7 @@ const LinkedInfrastructureTab = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant">
-                  {perCaseData.linked_assets.map((item, idx) => (
+                  {(perCaseData.linked_assets || []).map((item, idx) => (
                     <tr key={idx} className="hover:bg-surface-bright transition-colors">
                       <td className="py-3 px-4 font-technical-data text-technical-data text-on-background">{item.asset_id}</td>
                       <td className="py-3 px-4">
