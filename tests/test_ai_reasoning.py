@@ -21,7 +21,7 @@ from services.ai_reasoning import (
     calculate_evidence_fingerprint,
     reset_ai_telemetry,
     get_ai_telemetry,
-    OpenRouterProvider,
+    GeminiProvider,
     generate_deterministic_reasoning
 )
 
@@ -71,13 +71,15 @@ class TestAIReasoningEngine(unittest.TestCase):
             "extracted_domains": ["corporate-m365.online"]
         }
 
-        with patch.object(OpenRouterProvider, "analyze") as mock_analyze:
+        with patch.object(GeminiProvider, "analyze") as mock_analyze:
             mock_analyze.return_value = {
                 "ai_used": True,
-                "reasoning_source": "openrouter",
-                "model": "openrouter/free",
+                "provider": "Google Gemini",
+                "reasoning_source": "gemini",
+                "model": "gemini-2.5-flash-lite",
                 "attack_hypothesis": "Credential Phishing",
                 "summary": "Suspicious login portal detected.",
+                "supporting_evidence": ["Urgent credential harvesting link detected."],
                 "key_evidence": ["Urgent credential harvesting link detected."],
                 "reasoning": ["Urgent credential harvesting link detected."],
                 "confidence": 0.90
@@ -96,7 +98,7 @@ class TestAIReasoningEngine(unittest.TestCase):
             telemetry = get_ai_telemetry()
             self.assertEqual(telemetry["cache_hits"], 1)
 
-    def test_04_openrouter_429_graceful_fallback(self):
+    def test_04_gemini_429_graceful_fallback(self):
         """Task 30: HTTP 429 Rate Limit gracefully falls back to deterministic engine without crash."""
         evidence = {
             "subject": "Account Suspension Warning",
@@ -109,7 +111,7 @@ class TestAIReasoningEngine(unittest.TestCase):
 
         # Mock urllib HTTP 429 Error
         http_err = urllib.error.HTTPError(
-            url="https://openrouter.ai/api/v1/chat/completions",
+            url="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent",
             code=429,
             msg="Too Many Requests",
             hdrs={},
@@ -117,7 +119,7 @@ class TestAIReasoningEngine(unittest.TestCase):
         )
 
         with patch("urllib.request.urlopen", side_effect=http_err):
-            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-mockkey12345"}):
+            with patch.dict(os.environ, {"GEMINI_API_KEY": "sk-gemini-v1-mockkey12345"}):
                 res = analyze_evidence(evidence)
 
                 self.assertFalse(res["ai_used"])
@@ -128,8 +130,8 @@ class TestAIReasoningEngine(unittest.TestCase):
                 self.assertEqual(telemetry["rate_limits"], 1)
                 self.assertEqual(telemetry["fallbacks"], 1)
 
-    def test_05_openrouter_successful_json_parsing(self):
-        """Task 31: Valid OpenRouter response parses correctly and returns structured reasoning."""
+    def test_05_gemini_successful_json_parsing(self):
+        """Task 31: Valid Gemini response parses correctly and returns structured reasoning."""
         evidence = {
             "subject": "Action Required: Account Verification",
             "sender": "no-reply@security-center.example",
@@ -140,11 +142,14 @@ class TestAIReasoningEngine(unittest.TestCase):
         }
 
         mock_json_resp = {
-            "model": "meta-llama/llama-3.3-70b-instruct:free",
-            "choices": [
+            "candidates": [
                 {
-                    "message": {
-                        "content": '{\n  "attack_hypothesis": "Credential Harvesting",\n  "summary": "External domain attempting to steal account credentials.",\n  "key_evidence": ["Urgent verification language detected", "Domain mismatch identified"],\n  "reasoning_confidence": 0.92\n}'
+                    "content": {
+                        "parts": [
+                            {
+                                "text": '{\n  "summary": "External domain attempting credential theft.",\n  "classification": "PHISHING",\n  "confidence": 0.95,\n  "attack_hypothesis": "Credential Harvesting",\n  "why_flagged": [{"signal": "Urgency", "evidence": "Urgent verification language", "severity": "high"}],\n  "supporting_evidence": ["Urgent verification language detected", "Domain mismatch identified"],\n  "recommended_action": "BLOCK"\n}'
+                            }
+                        ]
                     }
                 }
             ]
@@ -155,14 +160,14 @@ class TestAIReasoningEngine(unittest.TestCase):
         mock_resp.__enter__.return_value = mock_resp
 
         with patch("urllib.request.urlopen", return_value=mock_resp):
-            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-v1-mockkey12345"}):
+            with patch.dict(os.environ, {"GEMINI_API_KEY": "sk-gemini-v1-mockkey12345"}):
                 res = analyze_evidence(evidence)
 
                 self.assertTrue(res["ai_used"])
-                self.assertEqual(res["reasoning_source"], "openrouter")
-                self.assertEqual(res["model"], "meta-llama/llama-3.3-70b-instruct:free")
+                self.assertEqual(res["provider"], "Google Gemini")
+                self.assertEqual(res["model"], "gemini-2.5-flash-lite")
                 self.assertEqual(res["attack_hypothesis"], "Credential Harvesting")
-                self.assertEqual(len(res["key_evidence"]), 2)
+                self.assertEqual(len(res["supporting_evidence"]), 2)
 
     def test_06_malformed_json_fallback(self):
         """Task 32: Malformed JSON from AI model triggers deterministic fallback without crash."""

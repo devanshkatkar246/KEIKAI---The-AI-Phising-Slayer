@@ -2,7 +2,7 @@ import os
 import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request, status, Query
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request, status, Query, Body
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -2178,6 +2178,57 @@ async def trace_attack_chain_endpoint(payload: AttackChainRequest):
     except Exception as e:
         logger.error(f"[KEIKAI API] Attack chain tracer error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to trace attack chain: {str(e)}")
+
+
+@app.post("/api/ai-insight", response_model=StandardResponse)
+async def generate_ai_insight(payload: Dict[str, Any] = Body(...)):
+    """
+    EMERGENCY AI PROVIDER ENDPOINT:
+    User-initiated execution of Google Gemini 2.5 Flash-Lite reasoning engine.
+    Processes normalized investigation evidence and returns structured AI insight.
+    Does NOT execute on page render, re-render, navigation, or automatic background tasks.
+    """
+    inv_id = payload.get("investigation_id") or payload.get("analysis_id") or "INV-UNKNOWN"
+    logger.info(f"AI REQUEST investigation_id={inv_id} model=gemini-2.5-flash-lite timestamp={datetime.now(timezone.utc).isoformat()}")
+
+    start_time = datetime.now()
+    from services.ai_reasoning import GeminiProvider, calculate_evidence_fingerprint, _REASONING_CACHE
+
+    fingerprint = calculate_evidence_fingerprint(payload)
+    if fingerprint in _REASONING_CACHE and _REASONING_CACHE[fingerprint].get("ai_used"):
+        logger.info("AI RESPONSE status=200 duration=0ms cache_hit=True model=gemini-2.5-flash-lite")
+        return StandardResponse(
+            status="success",
+            data=_REASONING_CACHE[fingerprint],
+            meta={"source_tool": "gemini_ai_reasoning_engine", "cached": True}
+        )
+
+    provider = GeminiProvider()
+    result = provider.analyze(payload)
+
+    duration = int((datetime.now() - start_time).total_seconds() * 1000)
+    logger.info(f"AI RESPONSE status=200 duration={duration}ms model=gemini-2.5-flash-lite")
+
+    if result:
+        result["cached"] = False
+        result["evidence_fingerprint"] = fingerprint
+        _REASONING_CACHE[fingerprint] = result
+        return StandardResponse(
+            status="success",
+            data=result,
+            meta={"source_tool": "gemini_ai_reasoning_engine"}
+        )
+    else:
+        from services.ai_reasoning import generate_deterministic_reasoning
+        fallback = generate_deterministic_reasoning(payload)
+        fallback["reasoning_source"] = "DETERMINISTIC_FALLBACK"
+        fallback["status"] = "AI INSIGHT UNAVAILABLE"
+        fallback["error_message"] = "Gemini AI provider unavailable. Operating with deterministic engine."
+        return StandardResponse(
+            status="success",
+            data=fallback,
+            meta={"source_tool": "deterministic_fallback_engine"}
+        )
 
 
 from schemas import InvestigationAnalysisRequest

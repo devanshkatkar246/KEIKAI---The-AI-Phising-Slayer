@@ -99,6 +99,62 @@ const EmailThreatInboxTab = ({
   const [payloadResult, setPayloadResult] = useState(null);
   const [payloadError, setPayloadError] = useState(null);
 
+  // Dedicated User-Initiated Gemini AI Insight State (PS Emergency Switch)
+  const [aiInsightState, setAiInsightState] = useState({
+    status: 'NOT_RUN', // 'NOT_RUN' | 'RUNNING' | 'COMPLETE' | 'FAILED'
+    data: null,
+    error: null
+  });
+
+  const handleFetchAIInsight = async () => {
+    if (aiInsightState.status === 'RUNNING') return; // Duplicate click protection
+
+    setAiInsightState({ status: 'RUNNING', data: null, error: null });
+
+    try {
+      const activeRes = investigationResult || analysisResult || {};
+      const payload = {
+        investigation_id: activeRes.analysis_id || activeRes.investigation_id || 'INV-CURRENT',
+        subject: activeRes.email?.subject || selectedSample?.subject || customSubject,
+        sender: activeRes.email?.sender || selectedSample?.sender || customSender,
+        body: activeRes.email?.body || selectedSample?.body || customBody,
+        signals: activeRes.signals || {},
+        risk_score: activeRes.risk_score || 85,
+        severity: activeRes.severity || 'HIGH',
+        threat_type: activeRes.threat_type || 'credential_phishing',
+        extracted_domains: activeRes.indicators?.domains || [activeRes.extracted_domain].filter(Boolean),
+        extracted_urls: activeRes.indicators?.urls || [activeRes.extracted_url].filter(Boolean),
+        sender_behavior: activeRes.sender_behavior || {}
+      };
+
+      const res = await apiFetch(`${API_BASE_URL}/api/ai-insight`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const respData = await safeParseJson(res);
+      if (respData.status === 'success' && respData.data) {
+        setAiInsightState({
+          status: 'COMPLETE',
+          data: respData.data,
+          error: null
+        });
+        addToast('AI Insight Ready', 'Google Gemini 2.5 Flash-Lite reasoning completed.', 'success');
+      } else {
+        throw new Error(respData.error || 'Failed to fetch AI insight');
+      }
+    } catch (err) {
+      console.error('AI Insight fetch error:', err);
+      setAiInsightState({
+        status: 'FAILED',
+        data: null,
+        error: err.message || 'AI Insight service unavailable'
+      });
+      addToast('AI Insight Error', err.message || 'Failed to complete Gemini AI reasoning', 'error');
+    }
+  };
+
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -763,6 +819,113 @@ const EmailThreatInboxTab = ({
                     </div>
                   </div>
                 )}
+
+                {/* ── DEDICATED GOOGLE GEMINI 2.5 FLASH-LITE AI INSIGHT SECTION ── */}
+                <div id="ai-insight-section" className="bg-surface border border-primary/40 rounded-xl p-5 space-y-4 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-outline-variant pb-3">
+                    <div>
+                      <h4 className="font-headline-md text-xs font-bold text-on-background flex items-center gap-2">
+                        <Sparkles size={16} className="text-primary" />
+                        <span>AI INVESTIGATION INSIGHT</span>
+                      </h4>
+                      <div className="flex items-center gap-3 text-[11px] font-technical-data text-on-surface-variant mt-0.5">
+                        <span>Provider: <strong className="text-on-background">Google Gemini</strong></span>
+                        <span>•</span>
+                        <span>Model: <strong className="text-primary">gemini-2.5-flash-lite</strong></span>
+                        <span>•</span>
+                        <span>Status: <strong className={aiInsightState.status === 'COMPLETE' ? 'text-[#059669]' : aiInsightState.status === 'RUNNING' ? 'text-primary' : 'text-on-surface-variant'}>{aiInsightState.status}</strong></span>
+                      </div>
+                    </div>
+
+                    {/* ✨ GET AI INSIGHT BUTTON */}
+                    <button
+                      type="button"
+                      onClick={handleFetchAIInsight}
+                      disabled={aiInsightState.status === 'RUNNING'}
+                      className="btn-primary py-2.5 px-5 rounded-lg text-xs font-bold inline-flex items-center gap-2 shadow-xs shrink-0 disabled:opacity-50"
+                    >
+                      {aiInsightState.status === 'RUNNING' ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin text-on-primary" />
+                          <span>Generating Gemini Insight...</span>
+                        </>
+                      ) : aiInsightState.status === 'COMPLETE' ? (
+                        <>
+                          <RefreshCw size={14} />
+                          <span>Regenerate AI Insight</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={14} />
+                          <span>✨ GET AI INSIGHT</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* AI INSIGHT CONTENT */}
+                  {aiInsightState.status === 'NOT_RUN' && (
+                    <p className="text-xs text-on-surface-variant font-technical-data">
+                      Click <strong className="text-primary">✨ GET AI INSIGHT</strong> above to trigger user-initiated Google Gemini 2.5 Flash-Lite reasoning over normalized investigation evidence.
+                    </p>
+                  )}
+
+                  {aiInsightState.status === 'FAILED' && (
+                    <div className="p-3.5 rounded-lg bg-error/10 border border-error/30 text-xs text-error space-y-1 font-technical-data">
+                      <span className="font-bold block">AI INSIGHT UNAVAILABLE</span>
+                      <p>{aiInsightState.error || 'Gemini AI provider unavailable. Operating with deterministic engine.'}</p>
+                    </div>
+                  )}
+
+                  {aiInsightState.status === 'COMPLETE' && aiInsightState.data && (
+                    <div className="space-y-4 text-xs font-technical-data animate-fade-in">
+                      <div className="p-3.5 rounded-lg bg-surface-container-low border border-outline-variant space-y-1">
+                        <span className="font-bold text-primary block text-[11px] uppercase">EXECUTIVE SUMMARY</span>
+                        <p className="text-on-background leading-relaxed">{aiInsightState.data.summary}</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                        <div className="bg-surface p-2.5 rounded border border-outline-variant">
+                          <span className="text-[10px] text-on-surface-variant block uppercase font-bold">CLASSIFICATION</span>
+                          <strong className="text-error block">{aiInsightState.data.classification || 'PHISHING'}</strong>
+                        </div>
+                        <div className="bg-surface p-2.5 rounded border border-outline-variant">
+                          <span className="text-[10px] text-on-surface-variant block uppercase font-bold">CONFIDENCE</span>
+                          <strong className="text-primary block">{Math.round((aiInsightState.data.confidence || 0.95) * 100)}%</strong>
+                        </div>
+                        <div className="bg-surface p-2.5 rounded border border-outline-variant">
+                          <span className="text-[10px] text-on-surface-variant block uppercase font-bold">RECOMMENDED ACTION</span>
+                          <strong className="text-error block">{aiInsightState.data.recommended_action || 'BLOCK'}</strong>
+                        </div>
+                        <div className="bg-surface p-2.5 rounded border border-outline-variant">
+                          <span className="text-[10px] text-on-surface-variant block uppercase font-bold">REASONING SOURCE</span>
+                          <strong className="text-on-background block">{aiInsightState.data.provider || 'Google Gemini'}</strong>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <span className="font-bold text-on-background block text-[11px] uppercase">ATTACK HYPOTHESIS</span>
+                        <p className="p-3 rounded bg-surface border border-outline-variant text-on-surface-variant leading-relaxed">
+                          {aiInsightState.data.attack_hypothesis}
+                        </p>
+                      </div>
+
+                      {aiInsightState.data.supporting_evidence && aiInsightState.data.supporting_evidence.length > 0 && (
+                        <div className="space-y-2">
+                          <span className="font-bold text-on-background block text-[11px] uppercase">SUPPORTING EVIDENCE</span>
+                          <div className="space-y-1.5">
+                            {aiInsightState.data.supporting_evidence.map((ev, idx) => (
+                              <div key={idx} className="p-2.5 rounded bg-surface border border-outline-variant text-xs text-on-background flex items-start gap-2">
+                                <span className="text-primary font-bold">•</span>
+                                <span>{typeof ev === 'string' ? ev : ev.evidence || JSON.stringify(ev)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 {/* Extracted IOCs Summary */}
                 <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 space-y-3">

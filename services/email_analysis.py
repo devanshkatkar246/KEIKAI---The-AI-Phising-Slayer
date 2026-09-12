@@ -589,7 +589,7 @@ def analyze_email_threat(
             severity = "HIGH"
 
     # Step 5: Provider-Agnostic AI Reasoning Engine (OpenRouter primary, cached, deterministic fallback)
-    from services.ai_reasoning import analyze_evidence
+    from services.ai_reasoning import generate_deterministic_reasoning
     evidence_payload = {
         "subject": sub,
         "sender": snd,
@@ -604,7 +604,7 @@ def analyze_email_threat(
         "iocs": iocs,
         "sender_behavior": sender_behavior
     }
-    ai_eval = analyze_evidence(evidence_payload)
+    ai_eval = generate_deterministic_reasoning(evidence_payload)
 
     reasoning = ai_eval.get("reasoning") or ai_eval.get("key_evidence") or []
     confidence = float(ai_eval.get("confidence", base_confidence))
