@@ -625,6 +625,63 @@ const EmailThreatInboxTab = ({
                   )}
                 </div>
 
+                {/* ── CONTENT ANALYSIS & NATURAL LANGUAGE INTENT SIGNALS (PS REQ 1) ── */}
+                <div id="content-analysis-section" className="bg-surface border border-outline-variant rounded-xl p-5 space-y-4 shadow-xs">
+                  <div className="flex items-center justify-between border-b border-outline-variant pb-3">
+                    <h4 className="font-headline-md text-xs font-bold text-on-background flex items-center gap-2">
+                      <FileText size={16} className="text-primary" />
+                      <span>CONTENT ANALYSIS &amp; NATURAL LANGUAGE INTENT SIGNALS</span>
+                    </h4>
+                    <span className="text-[10px] font-technical-data bg-primary/10 text-primary px-2 py-0.5 rounded font-bold uppercase">
+                      NLP Engine Active
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-technical-data">
+                    <div className={`p-3 rounded-lg border ${analysisResult.signals?.urgency_language ? 'bg-error/10 border-error/30 text-error' : 'bg-surface-container-low border-outline-variant text-on-surface-variant'}`}>
+                      <span className="text-[10px] uppercase font-bold block opacity-75">Urgent Language</span>
+                      <strong className="text-xs font-semibold">{analysisResult.signals?.urgency_language ? '⚠️ DETECTED' : '✓ Normal'}</strong>
+                    </div>
+
+                    <div className={`p-3 rounded-lg border ${analysisResult.signals?.sender_domain_mismatch || analysisResult.signals?.brand_impersonation ? 'bg-error/10 border-error/30 text-error' : 'bg-surface-container-low border-outline-variant text-on-surface-variant'}`}>
+                      <span className="text-[10px] uppercase font-bold block opacity-75">Authority Impersonation</span>
+                      <strong className="text-xs font-semibold">{analysisResult.signals?.sender_domain_mismatch || analysisResult.signals?.brand_impersonation ? '⚠️ DETECTED' : '✓ Normal'}</strong>
+                    </div>
+
+                    <div className={`p-3 rounded-lg border ${analysisResult.signals?.credential_request ? 'bg-error/10 border-error/30 text-error' : 'bg-surface-container-low border-outline-variant text-on-surface-variant'}`}>
+                      <span className="text-[10px] uppercase font-bold block opacity-75">Credential Request</span>
+                      <strong className="text-xs font-semibold">{analysisResult.signals?.credential_request ? '⚠️ DETECTED' : '✓ Normal'}</strong>
+                    </div>
+
+                    <div className={`p-3 rounded-lg border ${analysisResult.signals?.brand_impersonation ? 'bg-error/10 border-error/30 text-error' : 'bg-surface-container-low border-outline-variant text-on-surface-variant'}`}>
+                      <span className="text-[10px] uppercase font-bold block opacity-75">Brand Impersonation</span>
+                      <strong className="text-xs font-semibold">{analysisResult.signals?.brand_impersonation ? '⚠️ DETECTED' : '✓ Normal'}</strong>
+                    </div>
+
+                    <div className={`p-3 rounded-lg border ${analysisResult.signals?.suspicious_link ? 'bg-error/10 border-error/30 text-error' : 'bg-surface-container-low border-outline-variant text-on-surface-variant'}`}>
+                      <span className="text-[10px] uppercase font-bold block opacity-75">Suspicious Link Path</span>
+                      <strong className="text-xs font-semibold">{analysisResult.signals?.suspicious_link ? '⚠️ DETECTED' : '✓ Normal'}</strong>
+                    </div>
+
+                    <div className={`p-3 rounded-lg border ${analysisResult.signals?.financial_request ? 'bg-error/10 border-error/30 text-error' : 'bg-surface-container-low border-outline-variant text-on-surface-variant'}`}>
+                      <span className="text-[10px] uppercase font-bold block opacity-75">Financial Request</span>
+                      <strong className="text-xs font-semibold">{analysisResult.signals?.financial_request ? '⚠️ DETECTED' : '✓ Normal'}</strong>
+                    </div>
+                  </div>
+
+                  {/* WHY THIS MATTERS CALLOUT */}
+                  <div className="p-3.5 rounded-lg bg-surface-container-low border border-outline-variant text-xs text-on-background space-y-1">
+                    <span className="font-bold text-[11px] text-primary uppercase block">WHY THIS MATTERS</span>
+                    <p className="leading-relaxed text-on-surface-variant">
+                      {analysisResult.signals?.urgency_language && analysisResult.signals?.credential_request
+                        ? 'Message employs psychological urgency tactics and authority pressure to force the recipient into immediate credential verification before suspicious infrastructure is flagged.'
+                        : analysisResult.signals?.brand_impersonation
+                        ? 'Message imitates a recognized corporate brand while transmitting from an unauthenticated external domain.'
+                        : 'Content analysis evaluates natural language patterns against established phishing intent baselines.'}
+                    </p>
+                  </div>
+                </div>
+
                 {/* Sender Behavioral Telemetry Card (PHASE 2) */}
                 {analysisResult.sender_behavior && (
                   <div className="bg-surface border border-outline-variant rounded-xl p-4 space-y-3">

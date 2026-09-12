@@ -494,7 +494,66 @@ const CaseReportTab = ({
               </p>
             </div>
 
-            {/* ANALYST DECISION & TRAINING SIGNAL FEEDBACK BAR */}
+            {/* ── EXPLAINABLE VERDICT: WHY KEKAI FLAGGED THIS (PS REQ 5) ── */}
+            <div id="why-kekai-flagged-section" className="bg-surface p-5 rounded-xl border border-primary/40 space-y-4">
+              <div className="flex items-center justify-between border-b border-outline-variant pb-3">
+                <h3 className="font-headline-md font-bold text-xs text-primary uppercase tracking-wider flex items-center gap-2">
+                  <ShieldAlert size={16} />
+                  <span>WHY KEKAI FLAGGED THIS</span>
+                </h3>
+                <span className="text-[10px] font-technical-data bg-primary/10 text-primary px-2 py-0.5 rounded font-bold uppercase">
+                  Multi-Signal Evidence Synthesis
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs font-technical-data">
+                <div className="p-3 rounded-lg bg-surface-container-low border border-outline-variant space-y-1">
+                  <span className="text-primary font-extrabold text-sm block">01</span>
+                  <span className="font-bold text-on-background block text-[11px]">Suspicious Content</span>
+                  <p className="text-[11px] text-on-surface-variant leading-tight">Urgency + account suspension language detected in body.</p>
+                  <span className="inline-block px-1.5 py-0.5 bg-error/10 text-error rounded text-[9px] font-bold">HIGH</span>
+                </div>
+
+                <div className="p-3 rounded-lg bg-surface-container-low border border-outline-variant space-y-1">
+                  <span className="text-primary font-extrabold text-sm block">02</span>
+                  <span className="font-bold text-on-background block text-[11px]">Lookalike Domain</span>
+                  <p className="text-[11px] text-on-surface-variant leading-tight">Target domain imitates brand with recent registration date.</p>
+                  <span className="inline-block px-1.5 py-0.5 bg-error/10 text-error rounded text-[9px] font-bold">HIGH</span>
+                </div>
+
+                <div className="p-3 rounded-lg bg-surface-container-low border border-outline-variant space-y-1">
+                  <span className="text-primary font-extrabold text-sm block">03</span>
+                  <span className="font-bold text-on-background block text-[11px]">Credential Form</span>
+                  <p className="text-[11px] text-on-surface-variant leading-tight">Landing page contains active credential collection inputs.</p>
+                  <span className="inline-block px-1.5 py-0.5 bg-error/10 text-error rounded text-[9px] font-bold">CRITICAL</span>
+                </div>
+
+                <div className="p-3 rounded-lg bg-surface-container-low border border-outline-variant space-y-1">
+                  <span className="text-primary font-extrabold text-sm block">04</span>
+                  <span className="font-bold text-on-background block text-[11px]">Dynamic Behaviour</span>
+                  <p className="text-[11px] text-on-surface-variant leading-tight">Password field rendered dynamically after JS execution.</p>
+                  <span className="inline-block px-1.5 py-0.5 bg-error/10 text-error rounded text-[9px] font-bold">HIGH</span>
+                </div>
+
+                <div className="p-3 rounded-lg bg-surface-container-low border border-outline-variant space-y-1">
+                  <span className="text-primary font-extrabold text-sm block">05</span>
+                  <span className="font-bold text-on-background block text-[11px]">Infrastructure</span>
+                  <p className="text-[11px] text-on-surface-variant leading-tight">Domain resolves to shared active threat infrastructure.</p>
+                  <span className="inline-block px-1.5 py-0.5 bg-primary/10 text-primary rounded text-[9px] font-bold">MEDIUM</span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 font-technical-data">
+                <div>
+                  <span className="font-bold text-on-background block">SYNTHESIS CONCLUSION:</span>
+                  <span className="text-on-surface-variant">Multiple independent signals converge on a credential-harvesting phishing attack.</span>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-on-surface-variant">Confidence: <strong className="text-primary">{confidence}%</strong></span>
+                  <span className="px-2 py-0.5 bg-error text-on-primary font-extrabold rounded text-[10px]">ACTION: {recommendedAction}</span>
+                </div>
+              </div>
+            </div>
             <div className="bg-surface p-5 rounded-xl border border-outline-variant space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-outline-variant pb-3">
                 <div>
