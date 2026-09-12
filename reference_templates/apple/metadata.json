@@ -1,0 +1,7 @@
+{
+  "brand": "Apple",
+  "page_type": "login",
+  "image_path": "apple/login.png",
+  "source": "reference_brand_templates",
+  "version": "1.0"
+}

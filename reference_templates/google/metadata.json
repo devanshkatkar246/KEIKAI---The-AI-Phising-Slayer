@@ -1,0 +1,7 @@
+{
+  "brand": "Google",
+  "page_type": "login",
+  "image_path": "google/login.png",
+  "source": "reference_brand_templates",
+  "version": "1.0"
+}

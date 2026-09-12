@@ -708,62 +708,94 @@ def calculate_domain_alignment(landing_domain: str, official_domain: str) -> Dic
 
 def compute_visual_similarity(
     candidate_image_bytes: Optional[bytes],
-    reference_image_bytes: Optional[bytes]
+    reference_image_bytes: Optional[bytes] = None,
+    candidate_image_path: Optional[str] = None,
+    target_url: str = ""
 ) -> Dict[str, Any]:
     """
-    Computes actual visual perceptual hash similarity using imagehash (pHash / dHash).
-    Returns status: "UNAVAILABLE" if image bytes are missing (DOES NOT fabricate scores).
+    Computes actual visual perceptual hash similarity using imagehash (pHash).
+    Compares against the reference template corpus in reference_templates/.
+    Returns status: "UNAVAILABLE" if image bytes/path are missing (DOES NOT fabricate scores).
     """
-    if not candidate_image_bytes or not reference_image_bytes:
-        return {
-            "method": "phash",
-            "computed": False,
-            "status": "UNAVAILABLE",
-            "similarity": None,
-            "distance": None,
-            "message": "Reference or candidate screenshot image bytes missing. Visual similarity unavailable."
-        }
+    from services.imagehash_service import compare_target_against_reference_templates
 
-    if not (HAS_PIL and HAS_IMAGEHASH and Image and io):
+    temp_path = None
+    if candidate_image_path and os.path.exists(candidate_image_path):
+        target_path = candidate_image_path
+    elif candidate_image_bytes:
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+            tf.write(candidate_image_bytes)
+            temp_path = tf.name
+        target_path = temp_path
+    else:
         return {
-            "method": "phash",
+            "method": "perceptual_hash",
             "computed": False,
             "status": "UNAVAILABLE",
             "similarity": None,
             "distance": None,
-            "message": "PIL or imagehash module not available in environment."
+            "best_match": None,
+            "matches": [],
+            "message": "Reference or candidate screenshot image missing. Visual page similarity unavailable."
         }
 
     try:
-        cand_img = Image.open(io.BytesIO(candidate_image_bytes))
-        ref_img = Image.open(io.BytesIO(reference_image_bytes))
+        res = compare_target_against_reference_templates(target_path, threshold=16)
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
 
-        norm_cand = normalize_image_for_hashing(cand_img)
-        norm_ref = normalize_image_for_hashing(ref_img)
-
-        h_cand = imagehash.phash(norm_cand)
-        h_ref = imagehash.phash(norm_ref)
-
-        distance = h_cand - h_ref
-        # Max hamming distance for 64-bit hash is 64
-        similarity = round(max(0.0, 1.0 - (distance / 64.0)), 2)
-
-        return {
-            "method": "phash",
-            "computed": True,
-            "status": "SUCCESS",
-            "distance": distance,
-            "similarity": similarity,
-            "message": f"Actual perceptual hash visual similarity computed: {similarity} (Hamming distance: {distance})"
-        }
+        if res.get("status") == "complete" and res.get("best_match"):
+            best = res["best_match"]
+            return {
+                "method": "perceptual_hash",
+                "computed": True,
+                "status": "SUCCESS",
+                "target_url": target_url,
+                "distance": best["distance"],
+                "similarity": best["similarity"],
+                "best_match": best,
+                "matches": res.get("matches", []),
+                "threshold_distance": res.get("threshold_distance", 16),
+                "threshold_similarity": res.get("threshold_similarity", 0.75),
+                "page_similarity": {
+                    "target_url": target_url,
+                    "matches": res.get("matches", []),
+                    "best_match": best,
+                    "method": "perceptual_hash",
+                    "status": "complete"
+                },
+                "message": f"Actual perceptual hash visual similarity computed against reference templates: {best['similarity']*100:.1f}% (Best match: {best['brand']}, distance: {best['distance']})"
+            }
+        else:
+            return {
+                "method": "perceptual_hash",
+                "computed": False,
+                "status": res.get("status", "UNAVAILABLE"),
+                "similarity": None,
+                "distance": None,
+                "best_match": None,
+                "matches": [],
+                "message": res.get("reason", "Reference templates unavailable or comparison failed.")
+            }
     except Exception as err:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
         logger.error(f"Error computing visual similarity: {err}")
         return {
-            "method": "phash",
+            "method": "perceptual_hash",
             "computed": False,
             "status": "ERROR",
             "similarity": None,
             "distance": None,
+            "best_match": None,
+            "matches": [],
             "message": f"Failed to compute visual hash: {str(err)}"
         }
 

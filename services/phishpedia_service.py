@@ -208,26 +208,50 @@ def analyze_screenshot_visual_brand(
 def run_fallback_phishing_check(url: str, screenshot_path: str) -> Dict[str, Any]:
     """
     Fallback perceptual hash mode when ML weights are missing or inference fails.
+    Compares target page screenshot against known reference brand templates using real pHash.
     """
-    from services.imagehash_service import compute_image_hashes
+    from services.imagehash_service import compare_target_against_reference_templates
     try:
-        hash_data = compute_image_hashes(screenshot_path)
-        url_lower = url.lower()
-        phish_keywords = ["login", "verify", "secure", "credential", "account-alert"]
-        is_suspicious = any(k in url_lower for k in phish_keywords)
+        res = compare_target_against_reference_templates(screenshot_path, threshold=16)
+        matches = res.get("matches", [])
+        best_match = res.get("best_match")
+
+        best_brand = best_match["brand"] if best_match else "Unknown"
+        best_sim = best_match["similarity"] if best_match else 0.0
+        best_dist = best_match["distance"] if best_match else 64
+
+        is_suspicious = best_sim >= 0.75 or best_dist <= 16
+        verdict = "Phishing" if is_suspicious else ("Likely Phishing" if best_sim >= 0.50 else "Benign")
 
         return {
-            "status": "fallback",
-            "verdict": "Phishing" if is_suspicious else "Benign",
-            "target_brand": "Fallback Mode: Perceptual Hash",
-            "confidence": 85.0 if is_suspicious else 50.0,
+            "status": "complete",
+            "verdict": verdict,
+            "target_brand": best_brand,
+            "confidence": round(best_sim * 100.0, 1),
+            "distance": best_dist,
+            "similarity": best_sim,
+            "best_match": best_match,
+            "matches": matches,
+            "method": "perceptual_hash",
             "inference_mode": "fallback",
-            "inference_engine": "pHash (DCT) + Keyword Heuristics",
-            "is_fallback": True
+            "inference_engine": "Perceptual Hash Page Similarity (pHash DCT)",
+            "is_fallback": True,
+            "phishpedia_status": "UNAVAILABLE (Weights missing)",
+            "fallback_status": "FALLBACK ACTIVE: Perceptual Hash Page Similarity",
+            "target_url": url,
+            "page_similarity": {
+                "target_url": url,
+                "matches": matches,
+                "best_match": best_match,
+                "method": "perceptual_hash",
+                "status": "complete"
+            }
         }
     except Exception as e:
         return {
             "status": "error",
-            "reason": f"Fallback hash check failed: {str(e)}",
-            "is_fallback": True
+            "reason": f"Fallback page similarity check failed: {str(e)}",
+            "is_fallback": True,
+            "phishpedia_status": "UNAVAILABLE (Weights missing)",
+            "fallback_status": "FALLBACK FAILED"
         }

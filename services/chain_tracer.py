@@ -30,7 +30,7 @@ logger = logging.getLogger("keikai.chain_tracer")
 SUPPORTED_NODE_TYPES = {
     "EMAIL", "SENDER", "RECIPIENT", "URL", "DOMAIN", "IP", "ASN",
     "NAMESERVER", "MX", "REGISTRAR", "ATTACHMENT", "QR_DESTINATION",
-    "REDIRECT", "REDIRECT_HOP", "LANDING_PAGE", "FORM_ACTION", "CREDENTIAL_FORM",
+    "REDIRECT", "REDIRECT_HOP", "LANDING_PAGE", "PAGE_SIMILARITY", "FORM_ACTION", "CREDENTIAL_FORM",
     "BRAND", "VISUAL_FINGERPRINT", "INFRASTRUCTURE_CLUSTER", "THREAT_INTEL",
     "THREAT_INTEL_MATCH", "ATTACK_HYPOTHESIS", "FINAL_VERDICT", "CERTIFICATE"
 }
@@ -38,7 +38,7 @@ SUPPORTED_NODE_TYPES = {
 SUPPORTED_EDGE_TYPES = {
     "CONTAINS_URL", "SENT_BY", "CONTAINS_ATTACHMENT", "CONTAINS_QR", "RESOLVES_TO",
     "HAS_IP", "REGISTERED_WITH", "USES_NAMESERVER", "REDIRECTS_TO", "LANDS_ON",
-    "CONTAINS_CREDENTIAL_FORM", "VISUALLY_RESEMBLES", "POTENTIALLY_RELATED_TO",
+    "PAGE_SIMILAR_TO", "CONTAINS_CREDENTIAL_FORM", "VISUALLY_RESEMBLES", "POTENTIALLY_RELATED_TO",
     "MATCHES_FEED", "EVIDENCE_SUPPORTS_HYPOTHESIS", "HYPOTHESIS_TRIGGERS_VERDICT",
     # Backward-compatible legacy aliases
     "EMAIL_CONTAINS_URL", "URL_REDIRECTS_TO", "URL_RESOLVES_TO",
@@ -458,6 +458,34 @@ def trace_attack_chain(
                     related_entity_ids=[landing_node],
                     organisation_id=org_id
                 ))
+
+        # Page Similarity Engine Node & Edge
+        vis_analysis = page_analysis.get("visual_analysis") or page_analysis.get("page_similarity") or {}
+        best_m = vis_analysis.get("best_match") or page_analysis.get("best_match")
+        if best_m and best_m.get("brand"):
+            sim_pct = round(float(best_m.get("similarity", 0.0)) * 100.0, 1)
+            dist_val = best_m.get("distance", 64)
+            sim_brand = best_m.get("brand")
+
+            sim_node = graph.add_node(
+                f"page_sim:{final_url}",
+                "PAGE_SIMILARITY",
+                f"Page Similarity ({sim_brand} {sim_pct}%)",
+                {
+                    "brand": sim_brand,
+                    "similarity": sim_pct,
+                    "distance": dist_val,
+                    "method": "perceptual_hash"
+                }
+            )
+            graph.add_edge(
+                landing_node,
+                sim_node,
+                "PAGE_SIMILAR_TO",
+                f"Target page has {sim_pct}% perceptual hash similarity to reference {sim_brand} template (distance: {dist_val})",
+                confidence=90,
+                source_provider="page_similarity_engine"
+            )
 
         if clone_verdict.get("is_clone"):
             brand_node = graph.add_node(f"brand:{target_brand.lower()}", "BRAND", f"Target Brand ({target_brand})", {"brand": target_brand})

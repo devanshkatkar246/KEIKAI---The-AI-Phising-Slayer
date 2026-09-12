@@ -1,0 +1,7 @@
+{
+  "brand": "Amazon",
+  "page_type": "login",
+  "image_path": "amazon/login.png",
+  "source": "reference_brand_templates",
+  "version": "1.0"
+}

@@ -1,0 +1,7 @@
+{
+  "brand": "Microsoft",
+  "page_type": "login",
+  "image_path": "microsoft/login.png",
+  "source": "reference_brand_templates",
+  "version": "1.0"
+}

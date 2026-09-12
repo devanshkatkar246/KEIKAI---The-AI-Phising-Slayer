@@ -420,3 +420,131 @@ def compare_batch_images(
         "ranked_results": ranked_results,
     }
 
+
+# ---------------------------------------------------------------------------
+# Reference Template Library & Brand Page Similarity Engine
+# ---------------------------------------------------------------------------
+
+_REFERENCE_CORPUS_CACHE: List[Dict[str, Any]] = []
+
+def load_reference_template_corpus(reference_dir: str = "./reference_templates") -> List[Dict[str, Any]]:
+    """
+    Loads all brand reference templates from reference_templates/ and precomputes their pHash values.
+    Caches in memory for fast performance.
+    """
+    global _REFERENCE_CORPUS_CACHE
+    if _REFERENCE_CORPUS_CACHE:
+        return _REFERENCE_CORPUS_CACHE
+
+    corpus = []
+    ref_path = Path(reference_dir).resolve()
+    if not ref_path.exists():
+        logger.warning(f"Reference templates directory not found at {ref_path}")
+        return corpus
+
+    import json
+    for brand_folder in ref_path.iterdir():
+        if brand_folder.is_dir():
+            meta_file = brand_folder / "metadata.json"
+            img_file = brand_folder / "login.png"
+            if not img_file.exists():
+                img_files = list(brand_folder.glob("*.png")) + list(brand_folder.glob("*.jpg"))
+                if img_files:
+                    img_file = img_files[0]
+                else:
+                    continue
+
+            meta = {}
+            if meta_file.exists():
+                try:
+                    meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                except Exception as err:
+                    logger.warning(f"Failed to read metadata.json in {brand_folder}: {err}")
+
+            brand_name = meta.get("brand") or brand_folder.name.capitalize()
+            page_type = meta.get("page_type") or "login"
+
+            try:
+                hashes = compute_image_hashes(str(img_file))
+                corpus.append({
+                    "brand": brand_name,
+                    "page_type": page_type,
+                    "image_path": str(img_file),
+                    "relative_path": f"{brand_folder.name}/{img_file.name}",
+                    "phash_obj": hashes["phash"],
+                    "dhash_obj": hashes["dhash"],
+                    "phash_str": hashes["phash_str"],
+                    "metadata": meta
+                })
+            except Exception as e:
+                logger.warning(f"Failed to compute reference hash for {img_file}: {e}")
+
+    _REFERENCE_CORPUS_CACHE = corpus
+    return _REFERENCE_CORPUS_CACHE
+
+
+def compare_target_against_reference_templates(
+    target_image_path: str,
+    threshold: int = 16,
+    reference_dir: str = "./reference_templates"
+) -> Dict[str, Any]:
+    """
+    Compares target webpage screenshot against all reference brand templates using pHash.
+    Returns ranked matches, distance, normalized similarity [0.0 - 1.0], best_match, and method.
+    """
+    corpus = load_reference_template_corpus(reference_dir)
+    if not corpus:
+        return {
+            "status": "unavailable",
+            "reason": "Reference templates unavailable.",
+            "matches": [],
+            "best_match": None,
+            "method": "perceptual_hash"
+        }
+
+    try:
+        target_hashes = compute_image_hashes(target_image_path)
+        target_phash = target_hashes["phash"]
+
+        matches = []
+        for tmpl in corpus:
+            dist = int(target_phash - tmpl["phash_obj"])
+            # Map distance to similarity float score between 0.0 and 1.0 (64 max bits)
+            sim_score = max(0.0, round(1.0 - (dist / 64.0), 3))
+
+            matches.append({
+                "brand": tmpl["brand"],
+                "similarity": sim_score,
+                "distance": dist,
+                "template": tmpl["relative_path"],
+                "page_type": tmpl["page_type"]
+            })
+
+        # Sort matches by similarity descending (highest similarity first)
+        matches.sort(key=lambda x: (-x["similarity"], x["distance"]))
+        best_match = matches[0] if matches else None
+
+        return {
+            "status": "complete",
+            "matches": matches,
+            "best_match": {
+                "brand": best_match["brand"],
+                "similarity": best_match["similarity"],
+                "distance": best_match["distance"],
+                "template": best_match["template"]
+            } if best_match else None,
+            "threshold_distance": threshold,
+            "threshold_similarity": max(0.0, round(1.0 - (threshold / 64.0), 3)),
+            "method": "perceptual_hash"
+        }
+    except Exception as e:
+        logger.error(f"Failed to compare target against reference templates: {e}")
+        return {
+            "status": "error",
+            "reason": str(e),
+            "matches": [],
+            "best_match": None,
+            "method": "perceptual_hash"
+        }
+
+

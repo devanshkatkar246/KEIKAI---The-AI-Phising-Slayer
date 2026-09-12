@@ -1418,6 +1418,80 @@ async def get_visual_phishing_image(filename: str):
     return Response(content=png_bytes, media_type="image/png")
 
 
+@app.post("/api/page-similarity", response_model=StandardResponse)
+async def page_similarity_endpoint(
+    url: str = Form(..., description="Target page URL"),
+    screenshot: UploadFile = File(..., description="Target page screenshot image file")
+):
+    """
+    Real Page Similarity Engine Endpoint.
+    Compares target webpage screenshot against known reference brand templates using real pHash.
+    Outputs normalized structured data with target_url, matches, best_match, method, distance, and similarity.
+    """
+    try:
+        from utils.temp_file import TMP_DIR
+        ext = Path(screenshot.filename).suffix if screenshot.filename else ".png"
+        temp_filename = f"pagesim_{uuid.uuid4().hex[:12]}{ext}"
+        temp_path = TMP_DIR / temp_filename
+
+        with open(temp_path, "wb") as buffer:
+            import shutil
+            shutil.copyfileobj(screenshot.file, buffer)
+
+        from services.imagehash_service import compare_target_against_reference_templates
+        res = compare_target_against_reference_templates(str(temp_path), threshold=16)
+
+        try:
+            if temp_path.exists():
+                os.remove(temp_path)
+        except Exception:
+            pass
+
+        matches = res.get("matches", [])
+        best_match = res.get("best_match")
+
+        return {
+            "status": "success",
+            "data": {
+                "target_url": url,
+                "matches": matches,
+                "best_match": best_match,
+                "method": "perceptual_hash",
+                "threshold_distance": res.get("threshold_distance", 16),
+                "threshold_similarity": res.get("threshold_similarity", 0.75),
+                "status": "complete",
+                "phishpedia_status": "UNAVAILABLE (Weights missing)",
+                "fallback_status": "FALLBACK ACTIVE: Perceptual Hash Page Similarity"
+            },
+            "meta": {"source_tool": "page_similarity_engine"}
+        }
+    except Exception as e:
+        logger.error(f"Page similarity calculation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Page similarity calculation failed: {str(e)}")
+
+
+@app.get("/api/reference-templates/{brand}")
+async def get_reference_template_image(brand: str):
+    """
+    Serves the reference template screenshot PNG image for a specified brand (e.g. amazon, microsoft, paypal, google, apple).
+    """
+    clean_brand = brand.lower().strip()
+    template_path = Path(f"./reference_templates/{clean_brand}/login.png").resolve()
+    if not template_path.exists():
+        for folder in Path("./reference_templates").resolve().glob("*"):
+            if folder.name.lower() == clean_brand or clean_brand in folder.name.lower():
+                img = folder / "login.png"
+                if img.exists():
+                    template_path = img
+                    break
+
+    if not template_path.exists():
+        raise HTTPException(status_code=404, detail=f"Reference template image for brand '{brand}' not found.")
+
+    from fastapi.responses import FileResponse
+    return FileResponse(path=template_path, media_type="image/png")
+
+
 @app.post("/api/link-infrastructure", response_model=StandardResponse)
 async def link_infrastructure(payload: LinkInfrastructureRequest):
     """
