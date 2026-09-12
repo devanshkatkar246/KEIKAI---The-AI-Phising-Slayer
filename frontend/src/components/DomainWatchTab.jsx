@@ -59,9 +59,12 @@ const DomainWatchTab = ({
   const activeConfidence = investigationResult?.confidence || 91;
   const activeQuality = investigationResult?.evidenceQuality || 96;
 
-  // Auto-fill domain from active investigation if empty or updated
+  const lastSyncedDomainRef = React.useRef('');
+
+  // Auto-fill domain from active investigation when target domain changes
   useEffect(() => {
-    if (activeDomain && (!domainInput || domainInput !== activeDomain)) {
+    if (activeDomain && activeDomain !== lastSyncedDomainRef.current) {
+      lastSyncedDomainRef.current = activeDomain;
       setDomainScanState?.((prev) => ({
         ...prev,
         domainInput: activeDomain
